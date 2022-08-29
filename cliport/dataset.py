@@ -73,11 +73,13 @@ class RavensDataset(Dataset):
           seed: random seed used to initialize the episode.
           episode: list of (obs, act, reward, info) tuples.
         """
-        color, depth, action, reward, info = [], [], [], [], []
-        for obs, act, r, i in episode:
+        color, depth, action, all_mask, selected_mask, reward, info = [], [], [], [], [], [], []
+        for obs, act, a, s, r, i in episode:
             color.append(obs['color'])
             depth.append(obs['depth'])
             action.append(act)
+            all_mask.append(a)
+            selected_mask.append(s)
             reward.append(r)
             info.append(i)
 
@@ -95,6 +97,8 @@ class RavensDataset(Dataset):
         dump(color, 'color')
         dump(depth, 'depth')
         dump(action, 'action')
+        dump(all_mask, 'all_mask')
+        dump(selected_mask, 'selected_mask')
         dump(reward, 'reward')
         dump(info, 'info')
 
@@ -134,6 +138,8 @@ class RavensDataset(Dataset):
                 color = load_field(episode_id, 'color', fname)
                 depth = load_field(episode_id, 'depth', fname)
                 action = load_field(episode_id, 'action', fname)
+                all_mask = load_field(episode_id, 'all_mask', fname)
+                selected_mask = load_field(episode_id, 'selected_mask', fname)
                 reward = load_field(episode_id, 'reward', fname)
                 info = load_field(episode_id, 'info', fname)
 
@@ -141,10 +147,10 @@ class RavensDataset(Dataset):
                 episode = []
                 for i in range(len(action)):
                     obs = {'color': color[i], 'depth': depth[i]} if images else {}
-                    episode.append((obs, action[i], reward[i], info[i]))
+                    episode.append((obs, action[i], all_mask[i], selected_mask[i], reward[i], info[i]))
                 return episode, seed
 
-    def get_image(self, obs, cam_config=None):
+    def get_image(self, obs, selected_mask, cam_config=None):
         """Stack color and height images image."""
 
         # if self.use_goal_image:
@@ -159,17 +165,25 @@ class RavensDataset(Dataset):
         # Get color and height maps from RGB-D images.
         cmap, hmap = utils.get_fused_heightmap(
             obs, cam_config, self.bounds, self.pix_size)
+        # img = np.concatenate((cmap,
+        #                       hmap[Ellipsis, None],
+        #                       hmap[Ellipsis, None],
+        #                       hmap[Ellipsis, None]), axis=2)
+
+        selected_color = []
+       for colorname, image in selected_mask:
+            selected_color.append(image)
         img = np.concatenate((cmap,
                               hmap[Ellipsis, None],
-                              hmap[Ellipsis, None],
-                              hmap[Ellipsis, None]), axis=2)
+                              selected_color[0][Ellipsis, None],
+                              selected_color[1][Ellipsis, None]), axis=2)
         assert img.shape == self.in_shape, img.shape
         return img
 
     def process_sample(self, datum, augment=True):
         # Get training labels from data sample.
-        (obs, act, _, info) = datum
-        img = self.get_image(obs)
+        (obs, act, all_mask, selected_mask, _, info) = datum
+        img = self.get_image(obs, selected_mask)
 
         p0, p1 = None, None
         p0_theta, p1_theta = None, None
@@ -209,8 +223,8 @@ class RavensDataset(Dataset):
 
     def process_goal(self, goal, perturb_params):
         # Get goal sample.
-        (obs, act, _, info) = goal
-        img = self.get_image(obs)
+        (obs, act, all_mask, selected_mask, _, info) = goal
+        img = self.get_image(obs, selected_mask)
 
         p0, p1 = None, None
         p0_theta, p1_theta = None, None

@@ -40,6 +40,9 @@ from cliport.tasks.towers_of_hanoi import TowersOfHanoi
 from cliport.tasks.towers_of_hanoi_seq import TowersOfHanoiSeqSeenColors
 from cliport.tasks.towers_of_hanoi_seq import TowersOfHanoiSeqUnseenColors
 from cliport.tasks.towers_of_hanoi_seq import TowersOfHanoiSeqFull
+from cliport.tasks.pick_place_blocks_middle import PickPlaceMiddleUnseenColors
+from cliport.tasks.pick_place_blocks_middle import PickPlaceMiddleSeenColors
+from cliport.tasks.pick_place_blocks_middle import PickPlaceMiddleFull
 
 names = {
     # demo conditioned
@@ -84,4 +87,7 @@ names = {
     'towers-of-hanoi-seq-seen-colors': TowersOfHanoiSeqSeenColors,
     'towers-of-hanoi-seq-unseen-colors': TowersOfHanoiSeqUnseenColors,
     'towers-of-hanoi-seq-full': TowersOfHanoiSeqFull,
+    'pick-place-middle-unseen-colors': PickPlaceMiddleUnseenColors,
+    'pick-place-middle-seen-colors': PickPlaceMiddleSeenColors,
+    'pick-place-middle-full': PickPlaceMiddleFull,
 }

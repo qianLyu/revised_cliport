@@ -182,11 +182,11 @@ class TransporterAgent(LightningModule):
 
         # Get training losses.
         step = self.total_steps + 1
-        loss0, err0 = self.attn_training_step(frame)
+        loss0, err0 = self.attn_training_step(frame, compute_err=True)
         if isinstance(self.transport, Attention):
-            loss1, err1 = self.attn_training_step(frame)
+            loss1, err1 = self.attn_training_step(frame, compute_err=True)
         else:
-            loss1, err1 = self.transport_training_step(frame)
+            loss1, err1 = self.transport_training_step(frame, compute_err=True)
         total_loss = loss0 + loss1
         self.log('tr/attn/loss', loss0)
         self.log('tr/trans/loss', loss1)
@@ -197,8 +197,18 @@ class TransporterAgent(LightningModule):
 
         self.check_save_iteration()
 
+        # return dict(
+        #     loss=total_loss,
+        # )
+
         return dict(
-            loss=total_loss,
+            train_loss=total_loss,
+            train_loss0=loss0,
+            train_loss1=loss1,
+            train_attn_dist_err=err0['dist'],
+            train_attn_theta_err=err0['theta'],
+            train_trans_dist_err=err1['dist'],
+            train_trans_theta_err=err1['theta'],
         )
 
     def check_save_iteration(self):
@@ -257,6 +267,22 @@ class TransporterAgent(LightningModule):
     def training_epoch_end(self, all_outputs):
         super().training_epoch_end(all_outputs)
         utils.set_seed(self.trainer.current_epoch+1)
+
+        mean_train_total_loss = np.mean([v['train_loss'].item() for v in all_outputs])
+        mean_train_loss0 = np.mean([v['train_loss0'].item() for v in all_outputs])
+        mean_train_loss1 = np.mean([v['train_loss1'].item() for v in all_outputs])
+        total_attn_dist_err = np.sum([v['train_attn_dist_err'] for v in all_outputs])
+        total_attn_theta_err = np.sum([v['train_attn_theta_err'] for v in all_outputs])
+        total_trans_dist_err = np.sum([v['train_trans_dist_err'] for v in all_outputs])
+        total_trans_theta_err = np.sum([v['train_trans_theta_err'] for v in all_outputs])
+
+        self.log('tr/attn/loss', mean_train_loss0)
+        self.log('tr/trans/loss', mean_train_loss1)
+        self.log('tr/loss', mean_train_total_loss)
+        self.log('tr/total_attn_dist_err', total_attn_dist_err)
+        self.log('tr/total_attn_theta_err', total_attn_theta_err)
+        self.log('tr/total_trans_dist_err', total_trans_dist_err)
+        self.log('tr/total_trans_theta_err', total_trans_theta_err)
 
     def validation_epoch_end(self, all_outputs):
         mean_val_total_loss = np.mean([v['val_loss'].item() for v in all_outputs])

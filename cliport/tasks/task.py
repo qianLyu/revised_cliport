@@ -15,6 +15,12 @@ from cliport.utils import utils
 
 import pybullet as p
 
+import cv2
+import random
+import matplotlib
+import matplotlib.pyplot as plt
+from PIL import Image
+import copy
 
 class Task():
     """Base Task class."""
@@ -40,6 +46,10 @@ class Task():
         self.task_completed_desc = "task completed."
         self.progress = 0
         self._rewards = 0
+        self.all_color_block_id = {}
+        self.selected_color_block_id = {}
+        self.all_color_image = {}
+        self.selected_color_image = {}
 
 
         self.assets_root = None
@@ -67,8 +77,18 @@ class Task():
             # Oracle uses perfect RGB-D orthographic images and segmentation masks.
             _, hmap, obj_mask = self.get_true_image(env)
 
+            # plt.imshow(_)
+            # plt.savefig('./color.jpg')
+            # plt.close()
+            # plt.imshow(hmap)
+            # plt.savefig('./depth.jpg')
+            # plt.close()
+            # plt.imshow(obj_mask)
+            # plt.savefig('./obj_mask.jpg')
+            # plt.close()
             # Unpack next goal step.
             objs, matches, targs, replace, rotations, _, _, _ = self.goals[0]
+            # print('targs', targs)
 
             # Match objects to targets without replacement.
             if not replace:
@@ -110,6 +130,13 @@ class Task():
             # Filter out matched objects.
             order = [i for i in order if nn_dists[i] > 0]
 
+            # print('order', order)
+            # print('objs', objs)
+            # for i in range(len(obj_mask)):
+            #     for j in range(len(obj_mask[0])):
+            #         if obj_mask[i][j] == 10:
+            #             print((i, j))
+
             pick_mask = None
             for pick_i in order:
                 pick_mask = np.uint8(obj_mask == objs[pick_i][0])
@@ -125,10 +152,24 @@ class Task():
                 self.goals = []
                 self.lang_goals = []
                 print('Object for pick is not visible. Skipping demonstration.')
-                return
+                return None, None, None
+
+            for colorname, colorid in self.all_color_block_id.items():
+                temp_mask = copy.deepcopy(pick_mask)
+                temp_mask = np.uint8(obj_mask == colorid)
+                temp_mask = np.float32(temp_mask)
+                self.all_color_image[colorname] = temp_mask
+                if colorname in self.selected_color_block_id:
+                    self.selected_color_image[colorname] = temp_mask
+                # plt.imshow(temp_mask)
+                # plt.savefig(f'./{colorid}.jpg')
+                # plt.close()
 
             # Get picking pose.
             pick_prob = np.float32(pick_mask)
+            # plt.imshow(pick_prob)
+            # plt.savefig('./pick_prob.jpg')
+            # plt.close()
             pick_pix = utils.sample_distribution(pick_prob)
             # For "deterministic" demonstrations on insertion-easy, use this:
             # pick_pix = (160,80)
@@ -154,7 +195,12 @@ class Task():
 
             place_pose = (np.asarray(place_pose[0]), np.asarray(place_pose[1]))
 
-            return {'pose0': pick_pose, 'pose1': place_pose}
+            # for colorname, image in self.selected_color_image.items():
+            #     plt.imshow(image)
+            #     plt.savefig(f'./{colorname}.jpg')
+            #     plt.close()
+
+            return {'pose0': pick_pose, 'pose1': place_pose}, self.all_color_image, self.selected_color_image
 
         return OracleAgent(act)
 

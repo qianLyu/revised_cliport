@@ -70,15 +70,15 @@ def main(cfg):
 
         # Rollout expert policy
         for _ in range(task.max_steps):
-            act = agent.act(obs, info)
-            episode.append((obs, act, reward, info))
+            act, all_mask, selected_mask = agent.act(obs, info)
+            episode.append((obs, act, all_mask, selected_mask, reward, info))
             lang_goal = info['lang_goal']
             obs, reward, done, info = env.step(act)
             total_reward += reward
             print(f'Total Reward: {total_reward:.3f} | Done: {done} | Goal: {lang_goal}')
             if done:
                 break
-        episode.append((obs, None, reward, info))
+        episode.append((obs, None, all_mask, selected_mask, reward, info))
 
         # End video recording
         if record:
