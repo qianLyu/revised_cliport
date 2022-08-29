@@ -171,7 +171,7 @@ class RavensDataset(Dataset):
         #                       hmap[Ellipsis, None]), axis=2)
 
         selected_color = []
-       for colorname, image in selected_mask:
+        for colorname, image in selected_mask:
             selected_color.append(image)
         img = np.concatenate((cmap,
                               hmap[Ellipsis, None],
