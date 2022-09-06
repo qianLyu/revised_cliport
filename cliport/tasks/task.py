@@ -50,6 +50,7 @@ class Task():
         self.selected_color_block_id = {}
         self.all_color_image = {}
         self.selected_color_image = {}
+        self.max_steps = 12
 
 
         self.assets_root = None
@@ -71,7 +72,7 @@ class Task():
         """Oracle agent."""
         OracleAgent = collections.namedtuple('OracleAgent', ['act'])
 
-        def act(obs, info):  # pylint: disable=unused-argument
+        def act(obs, info, cur_step):  # pylint: disable=unused-argument
             """Calculate action."""
 
             # Oracle uses perfect RGB-D orthographic images and segmentation masks.
@@ -87,6 +88,8 @@ class Task():
             # plt.savefig('./obj_mask.jpg')
             # plt.close()
             # Unpack next goal step.
+            # print(self.goals)
+
             objs, matches, targs, replace, rotations, _, _, _ = self.goals[0]
             # print('targs', targs)
 
@@ -151,6 +154,10 @@ class Task():
             if pick_mask is None or np.sum(pick_mask) == 0:
                 self.goals = []
                 self.lang_goals = []
+                self.all_color_image = {}
+                self.selected_color_image = {}
+                self.all_color_block_id = {}
+                self.selected_color_block_id = {}
                 print('Object for pick is not visible. Skipping demonstration.')
                 return None, None, None
 
@@ -200,7 +207,16 @@ class Task():
             #     plt.savefig(f'./{colorname}.jpg')
             #     plt.close()
 
-            return {'pose0': pick_pose, 'pose1': place_pose}, self.all_color_image, self.selected_color_image
+            all_color_image = copy.deepcopy(self.all_color_image)
+            selected_color_image = copy.deepcopy(self.selected_color_image)
+
+            if cur_step == self.max_steps:
+                self.all_color_image = {}
+                self.selected_color_image = {}
+                self.all_color_block_id = {}
+                self.selected_color_block_id = {}
+
+            return {'pose0': pick_pose, 'pose1': place_pose}, all_color_image, selected_color_image
 
         return OracleAgent(act)
 
@@ -266,6 +282,10 @@ class Task():
         # Move to next goal step if current goal step is complete.
         if np.abs(max_reward - step_reward) < 0.01:
             self.progress += max_reward  # Update task progress.
+            self.all_color_image = {}
+            self.selected_color_image = {}
+            self.all_color_block_id = {}
+            self.selected_color_block_id = {}
             self.goals.pop(0)
             if len(self.lang_goals) > 0:
                 self.lang_goals.pop(0)

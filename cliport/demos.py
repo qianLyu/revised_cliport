@@ -70,7 +70,7 @@ def main(cfg):
 
         # Rollout expert policy
         for _ in range(task.max_steps):
-            act, all_mask, selected_mask = agent.act(obs, info)
+            act, all_mask, selected_mask = agent.act(obs, info, _+1)
             episode.append((obs, act, all_mask, selected_mask, reward, info))
             lang_goal = info['lang_goal']
             obs, reward, done, info = env.step(act)

@@ -33,7 +33,8 @@ class TransporterAgent(LightningModule):
         self.n_rotations = cfg['train']['n_rotations']
 
         self.pix_size = 0.003125
-        self.in_shape = (320, 160, 6)
+        # self.in_shape = (320, 160, 6)
+        self.in_shape = (320, 160, 9)
         self.cam_config = cameras.RealSenseD415.CONFIG
         self.bounds = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
 
@@ -314,10 +315,10 @@ class TransporterAgent(LightningModule):
             total_trans_theta_err=total_trans_theta_err,
         )
 
-    def act(self, obs, info=None, goal=None):  # pylint: disable=unused-argument
+    def act(self, obs, selected_mask, info=None, goal=None):  # pylint: disable=unused-argument
         """Run inference and return best action given visual observations."""
         # Get heightmap from RGB-D images.
-        img = self.test_ds.get_image(obs)
+        img = self.test_ds.get_image(obs, selected_mask)
 
         # Attention model forward pass.
         pick_inp = {'inp_img': img}

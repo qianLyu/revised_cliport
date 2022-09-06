@@ -39,7 +39,8 @@ class RavensDataset(Dataset):
 
         self.aug_theta_sigma = self.cfg['dataset']['augment']['theta_sigma'] if 'augment' in self.cfg['dataset'] else 60  # legacy code issue: theta_sigma was newly added
         self.pix_size = 0.003125
-        self.in_shape = (320, 160, 6)
+        # self.in_shape = (320, 160, 6)
+        self.in_shape = (320, 160, 9)        
         self.cam_config = cameras.RealSenseD415.CONFIG
         self.bounds = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
 
@@ -102,6 +103,10 @@ class RavensDataset(Dataset):
         dump(reward, 'reward')
         dump(info, 'info')
 
+        # print('depth', len(depth), len(depth[0]))
+        # print('all_mask', len(all_mask), len(all_mask[0]))
+        # print('selected_mask', len(selected_mask), len(selected_mask[0]))
+
         self.n_episodes += 1
         self.max_seed = max(self.max_seed, seed)
 
@@ -125,6 +130,11 @@ class RavensDataset(Dataset):
             data = pickle.load(open(os.path.join(path, fname), 'rb'))
             if cache:
                 self._cache[episode_id][field] = data
+
+            # print('episode_id', episode_id)
+            
+            # if field == 'selected_mask':
+            #     print('selected_mask', data)            
             return data
 
         # Get filename and random seed used to initialize episode.
@@ -142,6 +152,9 @@ class RavensDataset(Dataset):
                 selected_mask = load_field(episode_id, 'selected_mask', fname)
                 reward = load_field(episode_id, 'reward', fname)
                 info = load_field(episode_id, 'info', fname)
+
+                # print('all_mask', all_mask)
+                # print('selected_mask', selected_mask)
 
                 # Reconstruct episode.
                 episode = []
@@ -165,25 +178,47 @@ class RavensDataset(Dataset):
         # Get color and height maps from RGB-D images.
         cmap, hmap = utils.get_fused_heightmap(
             obs, cam_config, self.bounds, self.pix_size)
+
         # img = np.concatenate((cmap,
         #                       hmap[Ellipsis, None],
         #                       hmap[Ellipsis, None],
         #                       hmap[Ellipsis, None]), axis=2)
 
         selected_color = []
-        for colorname, image in selected_mask:
+        for colorname, image in selected_mask.items():
+            image = np.float32(image)
             selected_color.append(image)
+            if len(selected_color) == 5:
+                break
+
+        # print('selected_color', hmap.shape) # selected_color[0].shape)
+        # img = np.concatenate((cmap,
+        #                       hmap[Ellipsis, None],
+        #                       selected_color[0][Ellipsis, None],
+        #                       selected_color[1][Ellipsis, None]), axis=2)
+
         img = np.concatenate((cmap,
                               hmap[Ellipsis, None],
                               selected_color[0][Ellipsis, None],
-                              selected_color[1][Ellipsis, None]), axis=2)
+                              selected_color[1][Ellipsis, None],
+                              selected_color[2][Ellipsis, None],
+                              selected_color[3][Ellipsis, None],
+                              selected_color[4][Ellipsis, None]), axis=2)
+
+        # img = np.concatenate((cmap,
+        #                       hmap[Ellipsis, None],
+        #                       hmap[Ellipsis, None],
+        #                       hmap[Ellipsis, None]), axis=2)
+
         assert img.shape == self.in_shape, img.shape
         return img
 
     def process_sample(self, datum, augment=True):
         # Get training labels from data sample.
         (obs, act, all_mask, selected_mask, _, info) = datum
-        img = self.get_image(obs, selected_mask)
+
+        # img = self.get_image(obs, selected_mask)
+        img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None
         p0_theta, p1_theta = None, None
@@ -224,7 +259,8 @@ class RavensDataset(Dataset):
     def process_goal(self, goal, perturb_params):
         # Get goal sample.
         (obs, act, all_mask, selected_mask, _, info) = goal
-        img = self.get_image(obs, selected_mask)
+        # img = self.get_image(obs, selected_mask)
+        img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None
         p0_theta, p1_theta = None, None
@@ -261,6 +297,7 @@ class RavensDataset(Dataset):
         else:
             episode_id = np.random.choice(range(self.n_episodes))
         episode, _ = self.load(episode_id, self.images, self.cache)
+        # print(episode)
 
         # Is the task sequential like stack-block-pyramid-seq?
         is_sequential_task = '-seq' in self._path.split("/")[-1]
@@ -269,6 +306,9 @@ class RavensDataset(Dataset):
         i = np.random.choice(range(len(episode)-1))
         g = i+1 if is_sequential_task else -1
         sample, goal = episode[i], episode[g]
+        # print('sample', sample[3])
+        # print('goal', goal[3])
+        # print('len', len(episode))
 
         # Process sample.
         sample = self.process_sample(sample, augment=self.augment)

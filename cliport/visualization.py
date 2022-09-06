@@ -27,7 +27,7 @@ agent_name = 'cliport'
 model_task = 'pick-place-middle-seen-colors' # multi-task agent conditioned with language goals
 
 model_folder = 'exps' # path to pre-trained checkpoint
-ckpt_name = 'steps=50000-val_loss=0.00010277.ckpt' # name of checkpoint to load
+ckpt_name = 'steps=50000-val_loss=0.00010499.ckpt' # name of checkpoint to load
 
 draw_grasp_lines = True
 affordance_heatmap_scale = 30
@@ -107,13 +107,13 @@ for i in range(num_eval_instances):
     print(f'\nEvaluation Instance: {i + 1}/{num_eval_instances}')
     
     # Load episode
-    episode, seed = ds.load(5)
+    episode, seed = ds.load(99)
     goal = episode[-1]
 
     total_reward = 0
     np.random.seed(seed)
 
-    (obs, label_act, reward, info) = episode[0]
+    (obs, label_act, all_mask, selected_mask, reward, info) = episode[0]
 
     # Set task
     task_name = vcfg['eval_task']
@@ -135,13 +135,13 @@ for i in range(num_eval_instances):
     # Rollout
     while (step <= task.max_steps) and not done:
         print(f"Step: {step} ({task.max_steps} max)")
-        (obs, label_act, reward, info) = episode[0]
+        (obs, label_act, all_mask, selected_mask, reward, info) = episode[0]
         
         # Get batch
         if step == task.max_steps-1:
-            batch = ds.process_goal((obs, label_act, reward, info), perturb_params=None)
+            batch = ds.process_goal((obs, label_act, all_mask, selected_mask, reward, info), perturb_params=None)
         else:
-            batch = ds.process_sample((obs, label_act, reward, info), augment=False)
+            batch = ds.process_sample((obs, label_act, all_mask, selected_mask, reward, info), augment=False)
 
         print('afa', batch['p0'])
         print('add', batch['p1'])
@@ -182,7 +182,7 @@ for i in range(num_eval_instances):
         
         # Get action predictions
         l = str(info['lang_goal'])
-        act = agent.act(obs, info, goal=None)
+        act = agent.act(obs, selected_mask, info, goal=None)
         pick, place = act['pick'], act['place']
         
         # Visualize pick affordance
