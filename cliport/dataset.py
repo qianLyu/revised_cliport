@@ -39,8 +39,8 @@ class RavensDataset(Dataset):
 
         self.aug_theta_sigma = self.cfg['dataset']['augment']['theta_sigma'] if 'augment' in self.cfg['dataset'] else 60  # legacy code issue: theta_sigma was newly added
         self.pix_size = 0.003125
-        # self.in_shape = (320, 160, 6)
-        self.in_shape = (320, 160, 9)        
+        self.in_shape = (320, 160, 6)
+        # self.in_shape = (320, 160, 9)        
         self.cam_config = cameras.RealSenseD415.CONFIG
         self.bounds = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
 
@@ -179,17 +179,12 @@ class RavensDataset(Dataset):
         cmap, hmap = utils.get_fused_heightmap(
             obs, cam_config, self.bounds, self.pix_size)
 
-        # img = np.concatenate((cmap,
-        #                       hmap[Ellipsis, None],
-        #                       hmap[Ellipsis, None],
-        #                       hmap[Ellipsis, None]), axis=2)
-
-        selected_color = []
-        for colorname, image in selected_mask.items():
-            image = np.float32(image)
-            selected_color.append(image)
-            if len(selected_color) == 5:
-                break
+        # selected_color = []
+        # for colorname, image in selected_mask.items():
+        #     image = np.float32(image)
+        #     selected_color.append(image)
+        #     if len(selected_color) == 5:
+        #         break
 
         # print('selected_color', hmap.shape) # selected_color[0].shape)
         # img = np.concatenate((cmap,
@@ -197,18 +192,18 @@ class RavensDataset(Dataset):
         #                       selected_color[0][Ellipsis, None],
         #                       selected_color[1][Ellipsis, None]), axis=2)
 
-        img = np.concatenate((cmap,
-                              hmap[Ellipsis, None],
-                              selected_color[0][Ellipsis, None],
-                              selected_color[1][Ellipsis, None],
-                              selected_color[2][Ellipsis, None],
-                              selected_color[3][Ellipsis, None],
-                              selected_color[4][Ellipsis, None]), axis=2)
-
         # img = np.concatenate((cmap,
         #                       hmap[Ellipsis, None],
-        #                       hmap[Ellipsis, None],
-        #                       hmap[Ellipsis, None]), axis=2)
+        #                       selected_color[0][Ellipsis, None],
+        #                       selected_color[1][Ellipsis, None],
+        #                       selected_color[2][Ellipsis, None],
+        #                       selected_color[3][Ellipsis, None],
+        #                       selected_color[4][Ellipsis, None]), axis=2)
+
+        img = np.concatenate((cmap,
+                              hmap[Ellipsis, None],
+                              hmap[Ellipsis, None],
+                              hmap[Ellipsis, None]), axis=2)
 
         assert img.shape == self.in_shape, img.shape
         return img
