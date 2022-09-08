@@ -179,18 +179,18 @@ class RavensDataset(Dataset):
         cmap, hmap = utils.get_fused_heightmap(
             obs, cam_config, self.bounds, self.pix_size)
 
-        # selected_color = []
-        # for colorname, image in selected_mask.items():
-        #     image = np.float32(image)
-        #     selected_color.append(image)
+        selected_color = []
+        for colorname, image in selected_mask.items():
+            image = np.float32(image)
+            selected_color.append(image)
         #     if len(selected_color) == 5:
         #         break
 
         # print('selected_color', hmap.shape) # selected_color[0].shape)
-        # img = np.concatenate((cmap,
-        #                       hmap[Ellipsis, None],
-        #                       selected_color[0][Ellipsis, None],
-        #                       selected_color[1][Ellipsis, None]), axis=2)
+        img = np.concatenate((cmap,
+                              hmap[Ellipsis, None],
+                              selected_color[0][Ellipsis, None],
+                              selected_color[1][Ellipsis, None]), axis=2)
 
         # img = np.concatenate((cmap,
         #                       hmap[Ellipsis, None],
@@ -200,10 +200,10 @@ class RavensDataset(Dataset):
         #                       selected_color[3][Ellipsis, None],
         #                       selected_color[4][Ellipsis, None]), axis=2)
 
-        img = np.concatenate((cmap,
-                              hmap[Ellipsis, None],
-                              hmap[Ellipsis, None],
-                              hmap[Ellipsis, None]), axis=2)
+        # img = np.concatenate((cmap,
+        #                       hmap[Ellipsis, None],
+        #                       hmap[Ellipsis, None],
+        #                       hmap[Ellipsis, None]), axis=2)
 
         assert img.shape == self.in_shape, img.shape
         return img
@@ -212,8 +212,8 @@ class RavensDataset(Dataset):
         # Get training labels from data sample.
         (obs, act, all_mask, selected_mask, _, info) = datum
 
-        # img = self.get_image(obs, selected_mask)
-        img = self.get_image(obs, all_mask)
+        img = self.get_image(obs, selected_mask)
+        # img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None
         p0_theta, p1_theta = None, None
@@ -254,8 +254,8 @@ class RavensDataset(Dataset):
     def process_goal(self, goal, perturb_params):
         # Get goal sample.
         (obs, act, all_mask, selected_mask, _, info) = goal
-        # img = self.get_image(obs, selected_mask)
-        img = self.get_image(obs, all_mask)
+        img = self.get_image(obs, selected_mask)
+        # img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None
         p0_theta, p1_theta = None, None
