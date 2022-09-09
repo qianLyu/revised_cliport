@@ -20,6 +20,9 @@ BOUNDS = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
 TASK_NAMES = (tasks.names).keys()
 TASK_NAMES = sorted(TASK_NAMES)[::-1]
 
+import matplotlib
+import matplotlib.pyplot as plt
+
 
 class RavensDataset(Dataset):
     """A simple image dataset class."""
@@ -178,6 +181,10 @@ class RavensDataset(Dataset):
         # Get color and height maps from RGB-D images.
         cmap, hmap = utils.get_fused_heightmap(
             obs, cam_config, self.bounds, self.pix_size)
+
+        # plt.imshow(cmap)
+        # plt.savefig('./xx.jpg')
+        # plt.close()        
 
         selected_color = []
         for colorname, image in selected_mask.items():
