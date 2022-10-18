@@ -34,7 +34,6 @@ class TransporterAgent(LightningModule):
 
         self.pix_size = 0.003125
         self.in_shape = (320, 160, 6)
-        # self.in_shape = (320, 160, 9)
         self.cam_config = cameras.RealSenseD415.CONFIG
         self.bounds = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
 

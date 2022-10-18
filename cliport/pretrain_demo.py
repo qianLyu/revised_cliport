@@ -26,7 +26,7 @@ def main(cfg):
     save_data = cfg['save_data']
 
     # Initialize scripted oracle agent and dataset.
-    agent = task.oracle(env)
+    # agent = task.oracle(env)
     data_path = os.path.join(cfg['data_dir'], "{}-{}".format(cfg['task'], task.mode))
     dataset = RavensDataset(data_path, cfg, n_demos=0, augment=False)
     print(f"Saving to: {data_path}")
@@ -57,54 +57,16 @@ def main(cfg):
 
         env.set_task(task)
         obs = env.reset()
-        # print('f', obs['color'][0].shape)
         info = env.info
-        reward = 0
 
         # Unlikely, but a safety check to prevent leaks.
         if task.mode == 'val' and seed > (-1 + 10000):
             raise Exception("!!! Seeds for val set will overlap with the test set !!!")
 
-        # Start video recording (NOTE: super slow)
-        if record:
-            env.start_rec(f'{dataset.n_episodes+1:06d}')
+        batch_size, lang_goals, found_objs, batch = task.get_dataset(env)
 
-        # Rollout expert policy
-        for _ in range(task.max_steps):
-            act, all_mask, selected_mask = agent.act(obs, info, _+1)
-
-            # found_objects, hmaps = dataset.get_objects_vild(obs) #, selected_mask)
-            print('objects', len(found_objects), found_objects)
-
-            # if len(found_objects) < 6:
-            #     print('not enough objects')
-            #     found_objects = [found_objects[0] for j in range(6)]
-            #     hmaps = [hmaps[0] for j in range(6)]
-
-            # template = 'There is'
-            # for x in range(6):
-            #     template += f' a {found_objects[x]}'
-            # template += '. '
-    
-            episode.append((obs, act, found_objects, hmaps, reward, info))
-            lang_goal = info['lang_goal']
-            obs, reward, done, info = env.step(act)
-            total_reward += reward
-            print(f'Total Reward: {total_reward:.3f} | Done: {done} | Goal: {lang_goal}')
-            if done:
-                break
-
-        found_objects1, hmaps = dataset.get_objects_vild(obs) #, selected_mask)
-        # print('objects_goal', len(found_objects), found_objects)
-        episode.append((obs, None, found_objects1, hmaps, reward, info))
-
-        # End video recording
-        if record:
-            env.end_rec()
-
-        # Only save completed demonstrations.
-        if save_data and total_reward > 0.99: #and len(found_objects) == 6:
-            dataset.add(seed, episode)
+        episode.append((obs, None, batch_size, lang_goals, found_objs, batch))
+        dataset.add(seed, episode)
 
 
 if __name__ == '__main__':

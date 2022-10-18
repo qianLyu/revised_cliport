@@ -46,9 +46,9 @@ class Task():
         self.task_completed_desc = "task completed."
         self.progress = 0
         self._rewards = 0
-        self.all_color_block_id = {}
+        self.pick_attr_label = {}
         self.selected_color_block_id = {}
-        self.all_color_image = {}
+        self.all_id_image = {}
         self.selected_color_image = {}
         self.max_steps = 12
 
@@ -84,9 +84,9 @@ class Task():
             # plt.imshow(hmap)
             # plt.savefig('./depth.jpg')
             # plt.close()
-            # plt.imshow(obj_mask)
-            # plt.savefig('./obj_mask.jpg')
-            # plt.close()
+            plt.imshow(obj_mask)
+            plt.savefig('./obj_mask.jpg')
+            plt.close()
             # Unpack next goal step.
             # print(self.goals)
 
@@ -154,18 +154,18 @@ class Task():
             if pick_mask is None or np.sum(pick_mask) == 0:
                 self.goals = []
                 self.lang_goals = []
-                self.all_color_image = {}
+                self.all_id_image = {}
                 self.selected_color_image = {}
-                self.all_color_block_id = {}
+                self.pick_attr_label = {}
                 self.selected_color_block_id = {}
                 print('Object for pick is not visible. Skipping demonstration.')
                 return None, None, None
 
-            for colorname, colorid in self.all_color_block_id.items():
+            for colorid, attr_label in self.pick_attr_label.items():
                 temp_mask = copy.deepcopy(pick_mask)
                 temp_mask = np.uint8(obj_mask == colorid)
                 temp_mask = np.float32(temp_mask)
-                self.all_color_image[colorname] = temp_mask
+                self.all_id_image[colorid] = temp_mask
                 if colorname in self.selected_color_block_id:
                     self.selected_color_image[colorname] = temp_mask
                 # plt.imshow(temp_mask)
@@ -207,16 +207,16 @@ class Task():
             #     plt.savefig(f'./{colorname}.jpg')
             #     plt.close()
 
-            all_color_image = copy.deepcopy(self.all_color_image)
+            all_id_image = copy.deepcopy(self.all_id_image)
             selected_color_image = copy.deepcopy(self.selected_color_image)
 
             if cur_step == self.max_steps:
-                self.all_color_image = {}
+                self.all_id_image = {}
                 self.selected_color_image = {}
-                self.all_color_block_id = {}
+                self.pick_attr_label = {}
                 self.selected_color_block_id = {}
 
-            return {'pose0': pick_pose, 'pose1': place_pose}, all_color_image, selected_color_image
+            return {'pose0': pick_pose, 'pose1': place_pose}, all_id_image, selected_color_image
 
         return OracleAgent(act)
 
@@ -282,9 +282,9 @@ class Task():
         # Move to next goal step if current goal step is complete.
         if np.abs(max_reward - step_reward) < 0.01:
             self.progress += max_reward  # Update task progress.
-            self.all_color_image = {}
+            self.all_id_image = {}
             self.selected_color_image = {}
-            self.all_color_block_id = {}
+            self.pick_attr_label = {}
             self.selected_color_block_id = {}
             self.goals.pop(0)
             if len(self.lang_goals) > 0:

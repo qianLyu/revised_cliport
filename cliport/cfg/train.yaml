@@ -18,7 +18,7 @@ train:
   # folders
   exp_folder: exps
   train_dir: ${root_dir}/${train.exp_folder}/${train.task}-${train.agent}-n${train.n_demos}-train
-  data_dir: ${root_dir}/data
+  data_dir: ${root_dir}/pretrain_data
 
   # task configs
   task: packing-boxes-pairs-seen-colors
@@ -28,7 +28,7 @@ train:
 
   # hyper params
   n_rotations: 36
-  batchnorm: False # important: False because batch_size=1
+  batchnorm: True #False # important: False because batch_size=1
   lr: 1e-4
 
   attn_stream_fusion_type: 'add'

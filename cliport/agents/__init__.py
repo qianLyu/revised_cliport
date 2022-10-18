@@ -17,9 +17,18 @@ from cliport.agents.transporter import TwoStreamClipUNetLatTransporterAgent
 from cliport.agents.transporter_lang_goal import TwoStreamClipLingUNetLatTransporterAgent
 from cliport.agents.transporter_lang_goal import TwoStreamClipFilmLingUNetLatTransporterAgent
 
+from cliport.agents.weight_trainer import WeightTrainerAgent
+from cliport.agents.semantic_spatial_pretrainer import SSPTrainerAgent
 
 names = {
          ################################
+
+         ### Weight trainer ###
+         'weight_trainer': WeightTrainerAgent,
+
+         ### Semantic-Spatial Pre-trainer ###
+         'semantic_spatial_pretrainer': SSPTrainerAgent,
+
          ### CLIPort ###
          'cliport': TwoStreamClipLingUNetLatTransporterAgent,
          'two_stream_clip_lingunet_lat_transporter': TwoStreamClipLingUNetLatTransporterAgent,

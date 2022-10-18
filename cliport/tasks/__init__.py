@@ -43,6 +43,15 @@ from cliport.tasks.towers_of_hanoi_seq import TowersOfHanoiSeqFull
 from cliport.tasks.pick_place_blocks_middle import PickPlaceMiddleUnseenColors
 from cliport.tasks.pick_place_blocks_middle import PickPlaceMiddleSeenColors
 from cliport.tasks.pick_place_blocks_middle import PickPlaceMiddleFull
+from cliport.tasks.put_block_in_bowl_spatial import PutBlockInBowlSpatialUnseenColors
+from cliport.tasks.put_block_in_bowl_spatial import PutBlockInBowlSpatialSeenColors
+from cliport.tasks.put_block_in_bowl_spatial import PutBlockInBowlSpatialFull
+from cliport.tasks.pretrain_semantic_spatial import PretrainSemanticSpatialUnseenColors
+from cliport.tasks.pretrain_semantic_spatial import PretrainSemanticSpatialSeenColors
+from cliport.tasks.pretrain_semantic_spatial import PretrainSemanticSpatialFull
+from cliport.tasks.pretrain_semantic_spatial_left import PretrainSemanticSpatialLeftUnseenColors
+from cliport.tasks.pretrain_semantic_spatial_left import PretrainSemanticSpatialLeftSeenColors
+from cliport.tasks.pretrain_semantic_spatial_left import PretrainSemanticSpatialLeftFull
 
 names = {
     # demo conditioned
@@ -90,4 +99,13 @@ names = {
     'pick-place-middle-unseen-colors': PickPlaceMiddleUnseenColors,
     'pick-place-middle-seen-colors': PickPlaceMiddleSeenColors,
     'pick-place-middle-full': PickPlaceMiddleFull,
+    'put-block-in-bowl-spatial-seen-colors': PutBlockInBowlSpatialSeenColors,
+    'put-block-in-bowl-spatial-unseen-colors': PutBlockInBowlSpatialUnseenColors,
+    'put-block-in-bowl-spatial-full': PutBlockInBowlSpatialFull,
+    'pretrain-semantic-spatial-seen-colors': PretrainSemanticSpatialSeenColors,
+    'pretrain-semantic-spatial-unseen-colors': PretrainSemanticSpatialUnseenColors,
+    'pretrain-semantic-spatial-full': PretrainSemanticSpatialFull,
+    'pretrain-semantic-spatial-left-seen-colors': PretrainSemanticSpatialLeftSeenColors,
+    'pretrain-semantic-spatial-left-unseen-colors': PretrainSemanticSpatialLeftUnseenColors,
+    'pretrain-semantic-spatial-left-full': PretrainSemanticSpatialLeftFull,
 }

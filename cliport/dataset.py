@@ -11,18 +11,15 @@ from cliport import tasks
 from cliport.tasks import cameras
 from cliport.utils import utils
 
-# See transporter.py, regression.py, dummy.py, task.py, etc.
-PIXEL_SIZE = 0.003125
-CAMERA_CONFIG = cameras.RealSenseD415.CONFIG
-BOUNDS = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
+import random
+from pathlib import Path
 
-# Names as strings, REVERSE-sorted so longer (more specific) names are first.
-TASK_NAMES = (tasks.names).keys()
-TASK_NAMES = sorted(TASK_NAMES)[::-1]
+import torch
+from cliport import agents
+#from cliport.dataset import RavensDataset, RavensMultiTaskDataset
 
-import matplotlib
-import matplotlib.pyplot as plt
-
+from cliport.models.simple_lang_fusion import SimpleLingFusion
+import copy
 
 class RavensDataset(Dataset):
     """A simple image dataset class."""
@@ -42,10 +39,22 @@ class RavensDataset(Dataset):
 
         self.aug_theta_sigma = self.cfg['dataset']['augment']['theta_sigma'] if 'augment' in self.cfg['dataset'] else 60  # legacy code issue: theta_sigma was newly added
         self.pix_size = 0.003125
-        self.in_shape = (320, 160, 6)
+        self.in_shape = (320, 160, 6) 
         # self.in_shape = (320, 160, 9)        
         self.cam_config = cameras.RealSenseD415.CONFIG
         self.bounds = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
+
+        self.device_type = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # self.attention = SimpleLingFusion(
+        #     output_dim=1,
+        #     preprocess=self.cfg,
+        #     cfg=self.cfg,
+        #     device=self.device_type,
+        # )
+        # self.attention.load_state_dict(torch.load(os.path.join(self.cfg['train']['train_dir'], 'weight_checkpoints/weights.pth')))
+        # self.attention.to(self.device_type)
+        # self.attention.eval()
 
         # Track existing dataset if it exists.
         color_path = os.path.join(self._path, 'action')
@@ -166,7 +175,7 @@ class RavensDataset(Dataset):
                     episode.append((obs, action[i], all_mask[i], selected_mask[i], reward[i], info[i]))
                 return episode, seed
 
-    def get_image(self, obs, selected_mask, cam_config=None):
+    def get_image(self, obs, all_mask, selected_mask, lang_goal, cam_config=None):
         """Stack color and height images image."""
 
         # if self.use_goal_image:
@@ -182,44 +191,145 @@ class RavensDataset(Dataset):
         cmap, hmap = utils.get_fused_heightmap(
             obs, cam_config, self.bounds, self.pix_size)
 
-        # plt.imshow(cmap)
-        # plt.savefig('./xx.jpg')
-        # plt.close()        
+        # found_objects, hmaps = vild(image_path, category_name_string, vild_params, plot_on=True, prompt_swaps=prompt_swaps)
+
+        # if len(found_objects) < 6:
+        #     print('not enough objects')
+        #     found_objects = [found_objects[0] for j in range(6)]
+        #     hmaps = [hmaps[0] for j in range(6)]
+
+        # template = 'There is'
+        # for x in range(6):
+        #     template += f' a {found_objects[x]}'
+        # template += '. '
+    
 
         selected_color = []
-        for colorname, image in selected_mask.items():
-            image = np.float32(image)
-            selected_color.append(image)
-        #     if len(selected_color) == 5:
+        # for colorname, image in selected_mask.items():
+        #     image = np.float32(image)
+        #     selected_color.append(image)
+  
+        hmaps = []
+        # for colorname, image in all_mask.items():
+        #     image = np.float32(image)
+        #     if colorname in selected_mask:
+        #       hmaps.append(image)
+        #     else:
+        #       hmaps.append(np.zeros(image.shape))
+        #     if len(hmaps) == 5:
         #         break
 
+        w = 0
+
+        # fused_hmap = hmaps[0] + hmaps[1] + hmaps[2] + hmaps[3] + hmaps[4] 
+        #     # print(''fused_hmap.shape)
+
+
         # print('selected_color', hmap.shape) # selected_color[0].shape)
-        img = np.concatenate((cmap,
-                              hmap[Ellipsis, None],
-                              selected_color[0][Ellipsis, None],
-                              selected_color[1][Ellipsis, None]), axis=2)
 
         # img = np.concatenate((cmap,
         #                       hmap[Ellipsis, None],
         #                       selected_color[0][Ellipsis, None],
-        #                       selected_color[1][Ellipsis, None],
-        #                       selected_color[2][Ellipsis, None],
-        #                       selected_color[3][Ellipsis, None],
-        #                       selected_color[4][Ellipsis, None]), axis=2)
+        #                       selected_color[1][Ellipsis, None]), axis=2)
+
+        # print('aaaa', fused_hmap.shape)
+
+        img = np.concatenate((cmap,
+                              fused_hmap[Ellipsis, None]), axis=2)
 
         # img = np.concatenate((cmap,
         #                       hmap[Ellipsis, None],
         #                       hmap[Ellipsis, None],
         #                       hmap[Ellipsis, None]), axis=2)
+        # print(img.shape)
 
-        assert img.shape == self.in_shape, img.shape
-        return img
+        # assert img.shape == self.in_shape, img.shape
+        return img, 0 
+
+    # def get_image(self, obs, found_objects, hmaps, cam_config=None):
+    #     """Stack color and height images image."""
+
+    #     # if self.use_goal_image:
+    #     #   colormap_g, heightmap_g = utils.get_fused_heightmap(goal, configs)
+    #     #   goal_image = self.concatenate_c_h(colormap_g, heightmap_g)
+    #     #   input_image = np.concatenate((input_image, goal_image), axis=2)
+    #     #   assert input_image.shape[2] == 12, input_image.shape
+
+    #     if cam_config is None:
+    #         cam_config = self.cam_config
+
+    #     # Get color and height maps from RGB-D images.
+    #     cmap, hmap = utils.get_fused_heightmap(
+    #         obs, cam_config, self.bounds, self.pix_size)
+
+    #     # found_objects, hmaps = vild(image_path, category_name_string, vild_params, plot_on=True, prompt_swaps=prompt_swaps)
+
+    #     while len(found_objects) < 6:
+    #         # print('not enough objects')
+    #         found_objects.append(found_objects[0]) #  = [found_objects[0] for j in range(6)]
+    #         hmaps.append(hmaps[0]) #= [hmaps[0] for j in range(6)]
+
+    #     # print(found_objects)
+
+    #     template = 'There is '
+    #     for x in range(6):
+    #         template += f'a {found_objects[x]}, '
+    
+
+    #     # selected_color = []
+    #     # for colorname, image in selected_mask.items():
+    #     #     image = np.float32(image)
+    #     #     selected_color.append(image)
+    #     #     if len(selected_color) == 5:
+    #     #         break
+
+    #     # print('selected_color', hmap.shape) # selected_color[0].shape)
+
+    #     # img = np.concatenate((cmap,
+    #     #                       hmap[Ellipsis, None],
+    #     #                       selected_color[0][Ellipsis, None],
+    #     #                       selected_color[1][Ellipsis, None]), axis=2)
+
+    #     # img = np.concatenate((cmap,
+    #     #                       hmaps[0][Ellipsis, None],
+    #     #                       hmaps[1][Ellipsis, None],
+    #     #                       hmaps[2][Ellipsis, None],
+    #     #                       hmaps[3][Ellipsis, None],
+    #     #                       hmaps[4][Ellipsis, None],
+    #     #                       hmaps[5][Ellipsis, None]), axis=2)
+
+    #     img = np.concatenate((cmap,
+    #                           hmap[Ellipsis, None],
+    #                           hmap[Ellipsis, None],
+    #                           hmap[Ellipsis, None]), axis=2)
+
+    #     assert img.shape == self.in_shape, img.shape
+    #     return img, template
+
+    def get_objects_vild(self, obs, cam_config=None):
+        """get_vild_detections."""
+
+        if cam_config is None:
+            cam_config = self.cam_config
+
+        # Get color and height maps from RGB-D images.
+        cmap, hmap = utils.get_fused_heightmap(
+            obs, cam_config, self.bounds, self.pix_size)
+
+        img = Image.fromarray(cmap)
+        img.show()
+        img.save('img.jpg') 
+
+        image_path = 'img.jpg'
+
+        found_objects, hmaps = vild(image_path, category_name_string, vild_params, plot_on=True, prompt_swaps=prompt_swaps)
+        return found_objects, hmaps
 
     def process_sample(self, datum, augment=True):
         # Get training labels from data sample.
-        (obs, act, all_mask, selected_mask, _, info) = datum
+        (obs, act, found_objects, hmaps, _, info) = datum
 
-        img = self.get_image(obs, selected_mask)
+        img, template = self.get_image(obs, found_objects, hmaps, info['lang_goal'])
         # img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None
@@ -252,6 +362,7 @@ class RavensDataset(Dataset):
             warnings.warn("No language goal. Defaulting to 'task completed.'")
 
         if info and 'lang_goal' in info:
+            # sample['lang_goal'] = template + info['lang_goal']
             sample['lang_goal'] = info['lang_goal']
         else:
             sample['lang_goal'] = "task completed."
@@ -260,8 +371,8 @@ class RavensDataset(Dataset):
 
     def process_goal(self, goal, perturb_params):
         # Get goal sample.
-        (obs, act, all_mask, selected_mask, _, info) = goal
-        img = self.get_image(obs, selected_mask)
+        (obs, act, found_objects, hmaps, _, info) = goal
+        img, template = self.get_image(obs, found_objects, hmaps, info['lang_goal'])
         # img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None
@@ -283,6 +394,7 @@ class RavensDataset(Dataset):
             warnings.warn("No language goal. Defaulting to 'task completed.'")
 
         if info and 'lang_goal' in info:
+            # sample['lang_goal'] = template + info['lang_goal']
             sample['lang_goal'] = info['lang_goal']
         else:
             sample['lang_goal'] = "task completed."
@@ -317,6 +429,416 @@ class RavensDataset(Dataset):
         goal = self.process_goal(goal, perturb_params=sample['perturb_params'])
 
         return sample, goal
+
+
+class WeightTrainerDataset(Dataset):
+    """A simple image dataset class."""
+
+    def __init__(self, path, cfg, n_demos=0, augment=False):
+        """A simple RGB-D image dataset."""
+        self._path = path
+
+        self.cfg = cfg
+        self.sample_set = []
+        self.max_seed = -1
+        self.n_episodes = 0
+        self.images = self.cfg['dataset']['images']
+        self.cache = self.cfg['dataset']['cache']
+        self.n_demos = n_demos
+        self.augment = augment
+
+        self.aug_theta_sigma = self.cfg['dataset']['augment']['theta_sigma'] if 'augment' in self.cfg['dataset'] else 60  # legacy code issue: theta_sigma was newly added
+        self.pix_size = 0.003125
+        self.in_shape = (320, 160, 6)
+        self.in_shape = (320, 160, 8) 
+        # self.in_shape = (320, 160, 9)        
+        self.cam_config = cameras.RealSenseD415.CONFIG
+        self.bounds = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
+
+        # Track existing dataset if it exists.
+        color_path = os.path.join(self._path, 'action')
+        if os.path.exists(color_path):
+            for fname in sorted(os.listdir(color_path)):
+                if '.pkl' in fname:
+                    seed = int(fname[(fname.find('-') + 1):-4])
+                    self.n_episodes += 1
+                    self.max_seed = max(self.max_seed, seed)
+
+        self._cache = {}
+
+        if self.n_demos > 0:
+            self.images = self.cfg['dataset']['images']
+            self.cache = self.cfg['dataset']['cache']
+
+            # Check if there sufficient demos in the dataset
+            if self.n_demos > self.n_episodes:
+                raise Exception(f"Requested training on {self.n_demos} demos, but only {self.n_episodes} demos exist in the dataset path: {self._path}.")
+
+            episodes = np.random.choice(range(self.n_episodes), self.n_demos, False)
+            self.set(episodes)
+
+
+    def add(self, seed, episode):
+        """Add an episode to the dataset.
+
+        Args:
+          seed: random seed used to initialize the episode.
+          episode: list of (obs, act, reward, info) tuples.
+        """
+        color, depth, action, all_mask, selected_mask, reward, info = [], [], [], [], [], [], []
+        for obs, act, a, s, r, i in episode:
+            color.append(obs['color'])
+            depth.append(obs['depth'])
+            action.append(act)
+            all_mask.append(a)
+            selected_mask.append(s)
+            reward.append(r)
+            info.append(i)
+
+        color = np.uint8(color)
+        depth = np.float32(depth)
+
+        def dump(data, field):
+            field_path = os.path.join(self._path, field)
+            if not os.path.exists(field_path):
+                os.makedirs(field_path)
+            fname = f'{self.n_episodes:06d}-{seed}.pkl'  # -{len(episode):06d}
+            with open(os.path.join(field_path, fname), 'wb') as f:
+                pickle.dump(data, f)
+
+        dump(color, 'color')
+        dump(depth, 'depth')
+        dump(action, 'action')
+        dump(all_mask, 'all_mask')
+        dump(selected_mask, 'selected_mask')
+        dump(reward, 'reward')
+        dump(info, 'info')
+
+        # print('depth', len(depth), len(depth[0]))
+        # print('all_mask', len(all_mask), len(all_mask[0]))
+        # print('selected_mask', len(selected_mask), len(selected_mask[0]))
+
+        self.n_episodes += 1
+        self.max_seed = max(self.max_seed, seed)
+
+    def set(self, episodes):
+        """Limit random samples to specific fixed set."""
+        self.sample_set = episodes
+
+    def load(self, episode_id, images=True, cache=False):
+        def load_field(episode_id, field, fname):
+
+            # Check if sample is in cache.
+            if cache:
+                if episode_id in self._cache:
+                    if field in self._cache[episode_id]:
+                        return self._cache[episode_id][field]
+                else:
+                    self._cache[episode_id] = {}
+
+            # Load sample from files.
+            path = os.path.join(self._path, field)
+            data = pickle.load(open(os.path.join(path, fname), 'rb'))
+            if cache:
+                self._cache[episode_id][field] = data
+
+            return data
+
+        # Get filename and random seed used to initialize episode.
+        seed = None
+        path = os.path.join(self._path, 'action')
+        for fname in sorted(os.listdir(path)):
+            if f'{episode_id:06d}' in fname:
+                seed = int(fname[(fname.find('-') + 1):-4])
+
+                # Load data.
+                color = load_field(episode_id, 'color', fname)
+                depth = load_field(episode_id, 'depth', fname)
+                action = load_field(episode_id, 'action', fname)
+                all_mask = load_field(episode_id, 'all_mask', fname)
+                selected_mask = load_field(episode_id, 'selected_mask', fname)
+                reward = load_field(episode_id, 'reward', fname)
+                info = load_field(episode_id, 'info', fname)
+
+                # print('all_mask', all_mask)
+                # print('selected_mask', selected_mask)
+
+                # Reconstruct episode.
+                episode = []
+                for i in range(len(action)):
+                    obs = {'color': color[i], 'depth': depth[i]} if images else {}
+                    episode.append((obs, action[i], all_mask[i], selected_mask[i], reward[i], info[i]))
+                return episode, seed
+
+    def get_weight_dataset(self, all_mask, selected_mask, cam_config=None):
+
+        if cam_config is None:
+            cam_config = self.cam_config
+
+        img = {}
+    
+        for colorname, image in all_mask.items():
+            if colorname in selected_mask:
+              img[colorname] = 1
+            else:
+              img[colorname] = 0
+        return img
+
+    def process_sample(self, datum, augment=True):
+        # Get training labels from data sample.
+        (obs, act, all_mask, selected_mask, _, info) = datum
+
+        img = self.get_weight_dataset(all_mask, selected_mask)
+
+        sample = {
+            'img': img
+        }
+
+        # Add language goal if available.
+        if 'lang_goal' not in info:
+            warnings.warn("No language goal. Defaulting to 'task completed.'")
+
+        if info and 'lang_goal' in info:
+            # sample['lang_goal'] = template + info['lang_goal']
+            sample['lang_goal'] = info['lang_goal']
+        else:
+            sample['lang_goal'] = "task completed."
+
+        return sample
+
+    def process_goal(self, datum):
+        # Get goal sample.
+        (obs, act, all_mask, selected_mask, _, info) = datum
+
+        img = self.get_weight_dataset(all_mask, selected_mask)
+
+        sample = {
+            'img': img
+        }
+
+        # Add language goal if available.
+        if 'lang_goal' not in info:
+            warnings.warn("No language goal. Defaulting to 'task completed.'")
+
+        if info and 'lang_goal' in info:
+            # sample['lang_goal'] = template + info['lang_goal']
+            sample['lang_goal'] = info['lang_goal']
+        else:
+            sample['lang_goal'] = "task completed."
+
+        return sample
+
+    def __len__(self):
+        return len(self.sample_set)
+
+    def __getitem__(self, idx):
+        # Choose random episode.
+        if len(self.sample_set) > 0:
+            episode_id = np.random.choice(self.sample_set)
+        else:
+            episode_id = np.random.choice(range(self.n_episodes))
+        episode, _ = self.load(episode_id, self.images, self.cache)
+        # print(episode)
+
+        # Is the task sequential like stack-block-pyramid-seq?
+        is_sequential_task = '-seq' in self._path.split("/")[-1]
+
+        # Return random observation action pair (and goal) from episode.
+        i = np.random.choice(range(len(episode)-1))
+        g = i+1 if is_sequential_task else -1
+        sample, goal = episode[i], episode[g]
+        # print('sample', sample[3])
+        # print('goal', goal[3])
+        # print('len', len(episode))
+
+        # Process sample.
+        sample = self.process_sample(sample, augment=self.augment)
+        goal = self.process_goal(goal)
+
+        return sample, goal
+
+class SSPretrainDataset(Dataset):
+    """A simple image dataset class."""
+
+    def __init__(self, path, cfg, n_demos=0, augment=False):
+        """A simple RGB-D image dataset."""
+        self._path = path
+
+        self.cfg = cfg
+        self.sample_set = []
+        self.max_seed = -1
+        self.n_episodes = 0
+        self.images = self.cfg['dataset']['images']
+        self.cache = self.cfg['dataset']['cache']
+        self.n_demos = n_demos
+        self.augment = augment
+
+        self.aug_theta_sigma = self.cfg['dataset']['augment']['theta_sigma'] if 'augment' in self.cfg['dataset'] else 60  # legacy code issue: theta_sigma was newly added
+        self.pix_size = 0.003125
+        self.in_shape = (320, 160, 6)
+        self.in_shape = (320, 160, 8) 
+        # self.in_shape = (320, 160, 9)        
+        self.cam_config = cameras.RealSenseD415.CONFIG
+        self.bounds = np.array([[0.25, 0.75], [-0.5, 0.5], [0, 0.28]])
+
+        # Track existing dataset if it exists.
+        color_path = os.path.join(self._path, 'action')
+        if os.path.exists(color_path):
+            for fname in sorted(os.listdir(color_path)):
+                if '.pkl' in fname:
+                    seed = int(fname[(fname.find('-') + 1):-4])
+                    self.n_episodes += 1
+                    self.max_seed = max(self.max_seed, seed)
+
+        self._cache = {}
+
+        if self.n_demos > 0:
+            self.images = self.cfg['dataset']['images']
+            self.cache = self.cfg['dataset']['cache']
+
+            # Check if there sufficient demos in the dataset
+            if self.n_demos > self.n_episodes:
+                raise Exception(f"Requested training on {self.n_demos} demos, but only {self.n_episodes} demos exist in the dataset path: {self._path}.")
+
+            episodes = np.random.choice(range(self.n_episodes), self.n_demos, False)
+            self.set(episodes)
+
+
+    def add(self, seed, episode):
+        """Add an episode to the dataset.
+
+        Args:
+          seed: random seed used to initialize the episode.
+          episode: list of (obs, act, reward, info) tuples.
+        """
+        color, depth, action, all_mask, selected_mask, reward, info = [], [], [], [], [], [], []
+        for obs, act, a, s, r, i in episode:
+            color.append(obs['color'])
+            depth.append(obs['depth'])
+            action.append(act)
+            all_mask.append(a)
+            selected_mask.append(s)
+            reward.append(r)
+            info.append(i)
+
+        color = np.uint8(color)
+        depth = np.float32(depth)
+
+        def dump(data, field):
+            field_path = os.path.join(self._path, field)
+            if not os.path.exists(field_path):
+                os.makedirs(field_path)
+            fname = f'{self.n_episodes:06d}-{seed}.pkl'  # -{len(episode):06d}
+            with open(os.path.join(field_path, fname), 'wb') as f:
+                pickle.dump(data, f)
+
+        dump(color, 'color')
+        dump(depth, 'depth')
+        dump(action, 'action')
+        dump(all_mask, 'all_mask')
+        dump(selected_mask, 'selected_mask')
+        dump(reward, 'reward')
+        dump(info, 'info')
+
+        self.n_episodes += 1
+        self.max_seed = max(self.max_seed, seed)
+
+    def set(self, episodes):
+        """Limit random samples to specific fixed set."""
+        self.sample_set = episodes
+
+    def load(self, episode_id, images=True, cache=False):
+        def load_field(episode_id, field, fname):
+
+            # Check if sample is in cache.
+            if cache:
+                if episode_id in self._cache:
+                    if field in self._cache[episode_id]:
+                        return self._cache[episode_id][field]
+                else:
+                    self._cache[episode_id] = {}
+
+            # Load sample from files.
+            path = os.path.join(self._path, field)
+            data = pickle.load(open(os.path.join(path, fname), 'rb'))
+            if cache:
+                self._cache[episode_id][field] = data
+
+            # print('episode_id', episode_id)
+            
+            # if field == 'selected_mask':
+            #     print('selected_mask', data)            
+            return data
+
+        # Get filename and random seed used to initialize episode.
+        seed = None
+        path = os.path.join(self._path, 'action')
+        for fname in sorted(os.listdir(path)):
+            if f'{episode_id:06d}' in fname:
+                seed = int(fname[(fname.find('-') + 1):-4])
+
+                # Load data.
+                color = load_field(episode_id, 'color', fname)
+                depth = load_field(episode_id, 'depth', fname)
+                action = load_field(episode_id, 'action', fname)
+                all_mask = load_field(episode_id, 'all_mask', fname)
+                selected_mask = load_field(episode_id, 'selected_mask', fname)
+                reward = load_field(episode_id, 'reward', fname)
+                info = load_field(episode_id, 'info', fname)
+
+                # print('all_mask', all_mask)
+                # print('selected_mask', selected_mask)
+
+                # Reconstruct episode.
+                episode = []
+                for i in range(len(action)):
+                    obs = {'color': color[i], 'depth': depth[i]} if images else {}
+                    episode.append((obs, action[i], all_mask[i], selected_mask[i], reward[i], info[i]))
+                return episode, seed
+
+
+    def process_sample(self, datum, augment=True):
+        # Get training labels from data sample.
+        (obs, act, batch_size, lang_goals, found_objs, batch) = datum
+
+        words = []
+        imgs = []
+        labels = []
+        for key, value in batch.items():
+            imgs.append([list(found_objs.values())[key[j]] for j in range(3)])
+            labels.append(found_objs[value])
+
+        sample = {
+            'batch_size': batch_size,
+            'lang_goals': lang_goals,
+            # 'found_objs_words': words,
+            'found_objs_imgs': imgs,
+            'labels': labels
+        }
+
+        return sample
+
+    def __len__(self):
+        return len(self.sample_set)
+
+    def __getitem__(self, idx):
+        # Choose random episode.
+        if len(self.sample_set) > 0:
+            episode_id = np.random.choice(self.sample_set)
+        else:
+            episode_id = np.random.choice(range(self.n_episodes))
+        episode, _ = self.load(episode_id, self.images, self.cache)
+        # print(episode)
+
+        # There is only one episode
+        i = np.random.choice(range(len(episode)))
+
+        sample = episode[i]
+
+        # Process sample.
+        sample = self.process_sample(sample, augment=self.augment)
+
+        return sample
 
 
 class RavensMultiTaskDataset(RavensDataset):

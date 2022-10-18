@@ -143,8 +143,8 @@ for i in range(num_eval_instances):
         else:
             batch = ds.process_sample((obs, label_act, all_mask, selected_mask, reward, info), augment=False)
 
-        print('afa', batch['p0'])
-        print('add', batch['p1'])
+        print('p0', batch['p0'])
+        print('p1', batch['p1'])
 
         fig, axs = plt.subplots(2, 2, figsize=(13, 7))
         
