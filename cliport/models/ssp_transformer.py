@@ -26,83 +26,6 @@ import matplotlib.pyplot as plt
 import copy
 import random
 
-class CLIP_AE(CLIPLingUNetLat):
-    """ CLIP RN50 with U-Net skip connections without language """
-
-    def __init__(self, input_shape, output_dim, cfg, device, preprocess):
-        super().__init__(input_shape, output_dim, cfg, device, preprocess)
-
-    def _build_decoder(self):
-        # self.input_dim = 1024
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(self.input_dim, 1024, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.ReLU(True)
-        )
-
-        self.up1 = Up(2048, 1024 // self.up_factor, self.bilinear)
-
-        self.up2 = Up(1024, 512 // self.up_factor, self.bilinear)
-
-        self.up3 = Up(512, 256 // self.up_factor, self.bilinear)
-
-        self.layer1 = nn.Sequential(
-            ConvBlock(128, [64, 64, 64], kernel_size=3, stride=1, batchnorm=self.batchnorm),
-            IdentityBlock(64, [64, 64, 64], kernel_size=3, stride=1, batchnorm=self.batchnorm),
-            nn.UpsamplingBilinear2d(scale_factor=2),
-        )
-
-        self.layer2 = nn.Sequential(
-            ConvBlock(64, [32, 32, 32], kernel_size=3, stride=1, batchnorm=self.batchnorm),
-            IdentityBlock(32, [32, 32, 32], kernel_size=3, stride=1, batchnorm=self.batchnorm),
-            nn.UpsamplingBilinear2d(scale_factor=2),
-        )
-
-        self.layer3 = nn.Sequential(
-            ConvBlock(32, [16, 16, 16], kernel_size=3, stride=1, batchnorm=self.batchnorm),
-            IdentityBlock(16, [16, 16, 16], kernel_size=3, stride=1, batchnorm=self.batchnorm),
-            nn.UpsamplingBilinear2d(scale_factor=2),
-        )
-
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(16, self.output_dim, kernel_size=1)
-        )
-
-        self.bottleneck_in = nn.Sequential(nn.Linear(2048*50, 1024), nn.ReLU(True),)
-        self.bottleneck_out = nn.Sequential(nn.Linear(1024, 2048*50), nn.ReLU(True),)
-        self.im = None
-
-    def encoder_forward(self, x):
-        # x = self.preprocess(x, dist='clip')
-
-        # x = x[:,:3]  # select RGB
-        # x = self.preprocess(x, dist='clip')
-
-        in_type = x.dtype
-        in_shape = x.shape
-        # x = x[:,:3]  # select RGB
-        x, self.im = self.encode_image(x)
-        x = x.to(in_type)# [bz, 2048, 10, 5]
-        x = x.reshape(-1, 2048*50)
-        # print('x', x.shape)
-        x = self.bottleneck_in(x)
-        return x
-
-    def decoder_forward(self, x):
-        x = self.bottleneck_out(x)
-        x = x.reshape(-1, 2048, 10, 5)
-
-        x = self.conv1(x)
-        x = self.up1(x, self.im[-2])
-        x = self.up2(x, self.im[-3])
-        x = self.up3(x, self.im[-4])
-
-        for layer in [self.layer1, self.layer2, self.layer3, self.conv2]:
-            x = layer(x)
-
-        # x = F.interpolate(x, size=(in_shape[-2], in_shape[-1]), mode='bilinear')
-        x = F.interpolate(x, size=(320, 160), mode='bilinear')
-        return x
-
 class IdentityBlock(nn.Module):
     def __init__(self, in_planes, filters, kernel_size, stride=1, final_relu=True, batchnorm=True):
         super(IdentityBlock, self).__init__()
@@ -157,6 +80,111 @@ class ConvBlock(nn.Module):
         if self.final_relu:
             out = F.relu(out)
         return out
+
+class CLIP_AE(CLIPLingUNetLat):
+    """ CLIP RN50 with U-Net skip connections without language """
+
+    def __init__(self, input_shape, output_dim, cfg, device, preprocess):
+        super().__init__(input_shape, output_dim, cfg, device, preprocess)
+
+    def _build_decoder(self):
+        # self.input_dim = 1024
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(self.input_dim, 1024, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.ReLU(True)
+        )
+
+        self.up1 = Up(2048, 1024 // self.up_factor, self.bilinear)
+
+        self.up2 = Up(1024, 512 // self.up_factor, self.bilinear)
+
+        self.up3 = Up(512, 256 // self.up_factor, self.bilinear)
+
+        self.layer1 = nn.Sequential(
+            ConvBlock(128, [64, 64, 64], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+            IdentityBlock(64, [64, 64, 64], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+            nn.UpsamplingBilinear2d(scale_factor=2),
+        )
+
+        self.layer2 = nn.Sequential(
+            ConvBlock(64, [32, 32, 32], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+            IdentityBlock(32, [32, 32, 32], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+            nn.UpsamplingBilinear2d(scale_factor=2),
+        )
+
+        self.layer3 = nn.Sequential(
+            ConvBlock(32, [16, 16, 16], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+            IdentityBlock(16, [16, 16, 16], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+            nn.UpsamplingBilinear2d(scale_factor=2),
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(16, self.output_dim, kernel_size=1)
+        )
+
+        self.bottleneck_in = nn.Sequential(nn.Linear(2048*50, 256), nn.ReLU(True),)
+        self.bottleneck_out = nn.Sequential(nn.Linear(256, 2048*50), nn.ReLU(True),)
+        # self.bottleneck_out = nn.Sequential(nn.Linear(256, 2048*100), nn.ReLU(True),)
+        self.im = None
+
+        # self.conv2 = nn.Sequential(
+        #     # head
+
+        #     ConvBlock(256, [256, 256, 256], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+        #     IdentityBlock(256, [256, 256, 256], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+        #     nn.UpsamplingBilinear2d(scale_factor=2),
+
+        #     ConvBlock(256, [128, 128, 128], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+        #     IdentityBlock(128, [128, 128, 128], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+        #     nn.UpsamplingBilinear2d(scale_factor=2),
+
+        #     ConvBlock(128, [64, 64, 64], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+        #     IdentityBlock(64, [64, 64, 64], kernel_size=3, stride=1, batchnorm=self.batchnorm),
+        #     nn.UpsamplingBilinear2d(scale_factor=2),
+
+        #     # conv2
+        #     ConvBlock(64, [16, 16, self.output_dim], kernel_size=3, stride=1,
+        #               final_relu=False, batchnorm=self.batchnorm),
+        #     IdentityBlock(self.output_dim, [16, 16, self.output_dim], kernel_size=3, stride=1,
+        #                   final_relu=False, batchnorm=self.batchnorm),
+        # )
+
+    def encoder_forward(self, x):
+        # x = self.preprocess(x, dist='clip')
+
+        # x = x[:,:3]  # select RGB
+        # x = self.preprocess(x, dist='clip')
+
+        in_type = x.dtype
+        in_shape = x.shape
+        # x = x[:,:3]  # select RGB
+        x, self.im = self.encode_image(x)
+        x = x.to(in_type)# [bz, 2048, 10, 5]
+        x = x.reshape(-1, 2048*50)
+        # print('x', x.shape)
+        x = self.bottleneck_in(x)
+        return x
+
+    def decoder_forward(self, x):
+        x = self.bottleneck_out(x)
+
+        # x = x.reshape(-1, 256, 40, 20)
+        # x = self.conv2(x)
+
+
+        x = x.reshape(-1, 2048, 10, 5)
+
+        x = self.conv1(x)
+        x = self.up1(x, self.im[-2])
+        x = self.up2(x, self.im[-3])
+        x = self.up3(x, self.im[-4])
+
+        for layer in [self.layer1, self.layer2, self.layer3, self.conv2]:
+            x = layer(x)
+
+        # x = F.interpolate(x, size=(in_shape[-2], in_shape[-1]), mode='bilinear')
+        x = F.interpolate(x, size=(320, 160), mode='bilinear')
+        return x
 
 class ResNet_Autoencoder(nn.Module):
     def __init__(self, input_shape, output_dim, cfg, device, preprocess):
@@ -303,7 +331,7 @@ class SSPTransformer(nn.Module):
         self.token_type_embeddings = torch.nn.Embedding(2, 8)
         self.position_embeddings = torch.nn.Embedding(21, 8)
 
-        encoder_layers = TransformerEncoderLayer(1024, num_attention_heads,
+        encoder_layers = TransformerEncoderLayer(256, num_attention_heads,
                                                  encoder_hidden_dim, encoder_dropout, encoder_activation)
         self.encoder = TransformerEncoder(encoder_layers, encoder_num_layers)
         self._load_clip()
@@ -312,6 +340,7 @@ class SSPTransformer(nn.Module):
         # self.xnet = models.ResNet43_8s(self.in_shape, 1, self.cfg, self.device, utils.preprocess)
         # self.autoencoder = ResNet_Autoencoder(self.in_shape, 1, self.cfg, self.device, utils.preprocess)
         self.autoencoder = CLIP_AE(self.in_shape, 1, self.cfg, self.device, utils.preprocess)
+        self.text_encoder = nn.Sequential(nn.Linear(1024, 256), nn.ReLU(True),)
         # self._build_img_encoder(img_size, img_out)
         # self._build_decoder()
         # self.clip_model, self.preprocess = clip.load("RN50", device=device) # Load any model
@@ -319,7 +348,7 @@ class SSPTransformer(nn.Module):
 
     def build_trans(self, num_attention_heads=8, encoder_hidden_dim=16, \
                     encoder_dropout=0.1, encoder_activation="relu", encoder_num_layers=8):
-        encoder_layers = TransformerEncoderLayer(1024, num_attention_heads,
+        encoder_layers = TransformerEncoderLayer(256, num_attention_heads,
                                                  encoder_hidden_dim, encoder_dropout, encoder_activation)
         self.encoder = TransformerEncoder(encoder_layers, encoder_num_layers)
 
@@ -360,11 +389,15 @@ class SSPTransformer(nn.Module):
         return text_feat, text_emb, text_mask
 
     def forward(self, total_length, token_type_index, position_index, emb, batch_size):
-        batch_size = 4
+        batch_size = 3
+        pretrain = False
         # emb_shape: [batch_size, 3, 2, 320, 160]
 
-        l_enc, l_emb, l_mask = self.encode_text('left')  #lang_goals[j])
-        text_emb = torch.stack([l_enc for i in range(batch_size)], dim=0) # [batch_size, 1, 1024]
+        l_enc_l, l_emb_l, l_mask_l = self.encode_text('left')  #lang_goals[j])
+        l_enc_m, l_emb_m, l_mask_m = self.encode_text('middle')
+        l_enc_r, l_emb_r, l_mask_r = self.encode_text('right')
+        text_emb = torch.cat([l_enc_l, l_enc_m, l_enc_r], dim=0).float() # [batch_size, 1024]
+        text_emb = self.text_encoder(text_emb).reshape(batch_size, 1, 256) # [batch_size, 1, 256]
 
         nc = torch.zeros_like(emb)
         x = torch.cat([emb, nc], dim=1)
@@ -372,27 +405,38 @@ class SSPTransformer(nn.Module):
         input = torch.cat([input, input, input], dim=1)
         label = x[:,:,1,:,:].reshape(batch_size, 6, 320, 160)
         # label = torch.cat([label, label, label], dim=1)
-        with torch.no_grad():
+
+        if pretrain:
             latent = self.autoencoder.encoder_forward(input) # [batch_size*6, 1024]
-            latent = latent.reshape(batch_size, 6, 1024)
+            prediction = self.autoencoder.decoder_forward(latent)
+            prediction = torch.reshape(prediction, ((batch_size, 6, 320, 160)))
+
+        else:
+            # with torch.no_grad():
+            latent = self.autoencoder.encoder_forward(input) # [batch_size*6, 256]
+            latent = latent.reshape(batch_size, 6, 256)
             latent_input = torch.cat([text_emb, latent], dim=1)
-            latent_input = latent_input.transpose(1, 0)  # [7, batch_size, 1024]
-        encode = self.encoder(latent_input) # [7, batch_size, 1024]
-        decoder_in = encode[1:7].transpose(1,0) # [batch_size, 6, 1024]
+            latent_input = latent_input.transpose(1, 0)  # [7, batch_size, 256]
+            encode = self.encoder(latent_input) # [7, batch_size, 256]
+            decoder_in = encode[1:7].transpose(1,0) # [batch_size, 6, 256]
 
-        prediction = decoder_in.reshape(batch_size*6, 1024)
-        prediction = self.autoencoder.decoder_forward(prediction)
-        prediction = torch.reshape(prediction, ((batch_size, 6, 320, 160)))
+            prediction = decoder_in.reshape(batch_size*6, 256)
+            prediction = self.autoencoder.decoder_forward(prediction)
+            prediction = torch.reshape(prediction, ((batch_size, 6, 320, 160)))
 
-        # visualization
+            # visualization
         with torch.no_grad():    
             predictions = prediction.clone()
             predictions0 = predictions[0][0].detach().cpu()
             predictions0 = np.asarray(predictions0)
+            # predictions0 = np.ma.masked_where(predictions0 < 0, predictions0)
+            predictions0 = np.where(predictions0 > 0, predictions0, 0) 
             predictions1 = predictions[0][1].detach().cpu()
             predictions1 = np.asarray(predictions1)
+            predictions1 = np.where(predictions1 > 0, predictions1, 0) 
             predictions2 = predictions[0][2].detach().cpu()
             predictions2 = np.asarray(predictions2)      
+            predictions2 = np.where(predictions2 > 0, predictions2, 0) 
 
             # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
             # label = label.reshape(batch_size, 6, 1024)
@@ -403,10 +447,13 @@ class SSPTransformer(nn.Module):
 
             truth0 = truth[0][0].detach().cpu()
             truth0 = np.asarray(truth0)
+            truth0 = np.where(truth0 > 0, truth0, 0) 
             truth1 = truth[0][1].detach().cpu()
             truth1 = np.asarray(truth1)
+            truth1 = np.where(truth1 > 0, truth1, 0) 
             truth2 = truth[0][2].detach().cpu()
-            truth2 = np.asarray(truth2)      
+            truth2 = np.asarray(truth2)   
+            truth2 = np.where(truth2 > 0, truth2, 0)   
 
             plt.subplot(2, 3, 1)
             plt.imshow(predictions0)
@@ -421,11 +468,100 @@ class SSPTransformer(nn.Module):
             plt.subplot(2, 3, 6)
             plt.imshow(truth2)
             plt.show()
-            plt.savefig('./visualization.jpg')
+            plt.savefig('./visualization1.jpg')
             plt.close()
 
-        return prediction, label
+        with torch.no_grad():    
+            predictions = prediction.clone()
+            predictions0 = predictions[1][0].detach().cpu()
+            predictions0 = np.asarray(predictions0)
+            predictions0 = np.where(predictions0 > 0, predictions0, 0) 
+            predictions1 = predictions[1][1].detach().cpu()
+            predictions1 = np.asarray(predictions1)
+            predictions1 = np.where(predictions1 > 0, predictions1, 0) 
+            predictions2 = predictions[1][2].detach().cpu()
+            predictions2 = np.asarray(predictions2)      
+            predictions2 = np.where(predictions2 > 0, predictions2, 0) 
 
+            # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
+            # label = label.reshape(batch_size, 6, 1024)
+            truth = label.clone()
+            # truth = truth.reshape(batch_size*6, 1024)
+            # truth = self.autoencoder.decoder_forward(truth)
+            # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
+
+            truth0 = truth[1][0].detach().cpu()
+            truth0 = np.asarray(truth0)
+            truth0 = np.where(truth0 > 0, truth0, 0) 
+            truth1 = truth[1][1].detach().cpu()
+            truth1 = np.asarray(truth1)
+            truth1 = np.where(truth1 > 0, truth1, 0) 
+            truth2 = truth[1][2].detach().cpu()
+            truth2 = np.asarray(truth2)      
+            truth2 = np.where(truth2 > 0, truth2, 0) 
+
+            plt.subplot(2, 3, 1)
+            plt.imshow(predictions0)
+            plt.subplot(2, 3, 4)
+            plt.imshow(truth0)
+            plt.subplot(2, 3, 2)
+            plt.imshow(predictions1)
+            plt.subplot(2, 3, 5)
+            plt.imshow(truth1)
+            plt.subplot(2, 3, 3)
+            plt.imshow(predictions2)
+            plt.subplot(2, 3, 6)
+            plt.imshow(truth2)
+            plt.show()
+            plt.savefig('./visualization2.jpg')
+            plt.close()
+
+        with torch.no_grad():    
+            predictions = prediction.clone()
+            predictions0 = predictions[2][0].detach().cpu()
+            predictions0 = np.asarray(predictions0)
+            predictions0 = np.where(predictions0 > 0, predictions0, 0) 
+            predictions1 = predictions[2][1].detach().cpu()
+            predictions1 = np.asarray(predictions1)
+            predictions1 = np.where(predictions1 > 0, predictions1, 0) 
+            predictions2 = predictions[2][2].detach().cpu()
+            predictions2 = np.asarray(predictions2)     
+            predictions2 = np.where(predictions2 > 0, predictions2, 0)  
+
+            # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
+            # label = label.reshape(batch_size, 6, 1024)
+            truth = label.clone()
+            # truth = truth.reshape(batch_size*6, 1024)
+            # truth = self.autoencoder.decoder_forward(truth)
+            # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
+
+            truth0 = truth[2][0].detach().cpu()
+            truth0 = np.asarray(truth0)
+            truth0 = np.where(truth0 > 0, truth0, 0) 
+            truth1 = truth[2][1].detach().cpu()
+            truth1 = np.asarray(truth1)
+            truth1 = np.where(truth1 > 0, truth1, 0) 
+            truth2 = truth[2][2].detach().cpu()
+            truth2 = np.asarray(truth2)      
+            truth2 = np.where(truth2 > 0, truth2, 0) 
+
+            plt.subplot(2, 3, 1)
+            plt.imshow(predictions0)
+            plt.subplot(2, 3, 4)
+            plt.imshow(truth0)
+            plt.subplot(2, 3, 2)
+            plt.imshow(predictions1)
+            plt.subplot(2, 3, 5)
+            plt.imshow(truth1)
+            plt.subplot(2, 3, 3)
+            plt.imshow(predictions2)
+            plt.subplot(2, 3, 6)
+            plt.imshow(truth2)
+            plt.show()
+            plt.savefig('./visualization3.jpg')
+            plt.close()
+
+        return prediction, label            
 
     # def forward(self, total_length, token_type_index, position_index, emb, emb_decoder):
         # predictions = torch.mean(predictions, dim=0)

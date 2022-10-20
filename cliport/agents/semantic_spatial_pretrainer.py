@@ -45,7 +45,7 @@ class SSPTrainerAgent(LightningModule):
         self.cfg = cfg
         self.train_ds = train_ds
         self.test_ds = test_ds
-        self._load_clip()
+        # self._load_clip()
 
         self.name = name
         self.task = cfg['train']['task']
@@ -71,23 +71,23 @@ class SSPTrainerAgent(LightningModule):
 
         # print("Agent: {}, Logging: {}".format(name, cfg['train']['log']))
 
-    def _load_clip(self):
-        model, self.preprocess = load_clip("RN50", device=self.device)
-        self.clip_rn50 = build_model(model.state_dict()).to(self.device)
-        del model
+    # def _load_clip(self):
+    #     model, self.preprocess = load_clip("RN50", device=self.device)
+    #     self.clip_rn50 = build_model(model.state_dict()).to(self.device)
+    #     del model
 
-    def encode_image(self, img):
-        with torch.no_grad():
-            img_encoding, img_im = self.clip_rn50.visual.prepool_im(img)
-        return img_encoding, img_im
+    # def encode_image(self, img):
+    #     with torch.no_grad():
+    #         img_encoding, img_im = self.clip_rn50.visual.prepool_im(img)
+    #     return img_encoding, img_im
 
-    def encode_text(self, x):
-        with torch.no_grad():
-            tokens = tokenize([x]).to(self.device)
-            text_feat, text_emb = self.clip_rn50.encode_text_with_embeddings(tokens)
+    # def encode_text(self, x):
+    #     with torch.no_grad():
+    #         tokens = tokenize([x]).to(self.device)
+    #         text_feat, text_emb = self.clip_rn50.encode_text_with_embeddings(tokens)
 
-        text_mask = torch.where(tokens==0, tokens, 1)  # [1, max_token_len]
-        return text_feat, text_emb, text_mask
+    #     text_mask = torch.where(tokens==0, tokens, 1)  # [1, max_token_len]
+    #     return text_feat, text_emb, text_mask
 
     def _build_model(self):
         # stream_one_fcn = 'plain_resnet'
@@ -104,6 +104,7 @@ class SSPTrainerAgent(LightningModule):
 
         # self.attention.load_state_dict(torch.load(os.path.join(self.cfg['train']['train_dir'], 'pretrained_ae_checkpoints/pretrained_ae.pth')))
         self.attention.load_state_dict(torch.load(os.path.join('/home/luoqian/revised_cliport', 'pretrained_ae_checkpoints/pretrained_ae.pth')))
+
         # for param in self.attention.autoencoder.parameters():
         #     param.requires_grad = False
 
@@ -209,33 +210,49 @@ class SSPTrainerAgent(LightningModule):
         emb_decoder = []
         relabel = []
         # label = []
-        image_show = []
-        batch_size = 4
-        for j in range(batch_size):
-            t = []
-            p = []
-            e = []
-            e_d = []
-            r = []
-            t.append(0)
-            p.append(0)
-            image_show = [labels[j]]
+        batch_size = 3
+        e = []
+        # for j in range(batch_size):
+            # t = []
+            # p = []
+            # e = []
+            # e_d = []
+            # r = []
+            # t.append(0)
+            # p.append(0)
             # random.shuffle(found_objs_imgs[j])
             # for i in range(3):
             #     x = torch.tensor([found_objs_imgs[j][0]], requires_grad = True).cuda() #[1, 320, 160]
             #     x = torch.flatten(x, start_dim=1)
             #     y = self.attention.img_encoder_forward(x)
             #     e.append(y)
-            for i in range(3):
-                image_show.append(found_objs_imgs[j][i])
 
-            # e = torch.cat(e, dim = 0)
-            e.append([found_objs_imgs[j][0], found_objs_imgs[j][0]])
-            for i in range(1, 3):
-                e.append([found_objs_imgs[j][i], np.zeros_like(found_objs_imgs[j][i])])
-            random.shuffle(e)
-            emb.append(e)
-            # relabel.append(r)
+
+            # e.append([found_objs_imgs[j][0], found_objs_imgs[j][0]])
+            # for i in range(1, 3):
+            #     e.append([found_objs_imgs[j][i], found_objs_imgs[j][i]])  #np.zeros_like(found_objs_imgs[j][i])])
+            # random.shuffle(e)
+            # emb.append(e)
+        e_left = []
+        e_left.append([found_objs_imgs[0][0], found_objs_imgs[0][0]])
+        for i in range(1, 3):
+            e_left.append([found_objs_imgs[0][i], np.zeros_like(found_objs_imgs[0][i])])
+        random.shuffle(e_left)
+        emb.append(e_left)
+        e_middle = []
+        e_middle.append([found_objs_imgs[1][1], found_objs_imgs[1][1]])
+        e_middle.append([found_objs_imgs[1][0], np.zeros_like(found_objs_imgs[1][0])])
+        e_middle.append([found_objs_imgs[1][2], np.zeros_like(found_objs_imgs[1][2])])
+        random.shuffle(e_middle)
+        emb.append(e_middle)
+        e_right = []
+        e_right.append([found_objs_imgs[2][2], found_objs_imgs[2][2]])
+        e_right.append([found_objs_imgs[2][0], np.zeros_like(found_objs_imgs[2][0])])
+        e_right.append([found_objs_imgs[2][1], np.zeros_like(found_objs_imgs[2][1])])
+        random.shuffle(e_right)
+        emb.append(e_right)
+
+
         relabel = torch.tensor(labels[:batch_size]).cuda()
         # emb = torch.stack(emb, dim = 0)
         emb = torch.tensor(emb).cuda()
@@ -286,6 +303,7 @@ class SSPTrainerAgent(LightningModule):
             # save lastest checkpoint
             # print(f"Saving last.ckpt Epoch: {self.trainer.current_epoch} | Global Step: {self.trainer.global_step}")
             self.save_last_checkpoint()
+            # torch.save(self.attention.state_dict(), os.path.join('/home/luoqian/revised_cliport', 'pretrained_ae_checkpoints/pretrained_ae.pth'))
             # torch.save(self.attention.state_dict(), os.path.join(self.cfg['train']['train_dir'], 'pretrained_ae_checkpoints/pretrained_ae.pth'))
             #print('afja')
 
