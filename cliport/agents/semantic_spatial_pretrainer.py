@@ -103,7 +103,7 @@ class SSPTrainerAgent(LightningModule):
         )
 
         # self.attention.load_state_dict(torch.load(os.path.join(self.cfg['train']['train_dir'], 'pretrained_ae_checkpoints/pretrained_ae.pth')))
-        self.attention.load_state_dict(torch.load(os.path.join('/home/luoqian/revised_cliport', 'pretrained_ae_checkpoints/pretrained_ae.pth')))
+        # self.attention.load_state_dict(torch.load(os.path.join('/home/luoqian/revised_cliport', 'pretrained_ae_checkpoints/pretrained_ae.pth')))
 
         # for param in self.attention.autoencoder.parameters():
         #     param.requires_grad = False
@@ -118,11 +118,11 @@ class SSPTrainerAgent(LightningModule):
         out = self.attention.forward(inp_color, lang_goal)
         return out
 
-    def attn_training_step(self, max_obj_num, token_type_index, position_index, emb, batch_size, labels, backprop=True, compute_err=False):
+    def attn_training_step(self, max_obj_num, token_type_index, position_index, lang_goals, emb, batch_size, labels, label_sp, pos, backprop=True, compute_err=False):
 
-        total_length = max_obj_num * 2 + 1
-        out, label = self.attention.forward(total_length, token_type_index, position_index, emb, batch_size)
-        return self.attn_criterion(backprop, out, label)
+        total_length = max_obj_num #  * 2 + 1
+        out_s, label_s, out_sp, label_sp = self.attention.forward(total_length, token_type_index, position_index, lang_goals, emb, batch_size, labels, label_sp, pos)
+        return self.attn_criterion(backprop, out_s, label_s, out_sp, label_sp) #, self.attn_criterion(backprop, out_sp, label_sp, False)
 
     def act(self, obs, selected_mask, info, goal=None):  # pylint: disable=unused-argument
         """Run inference and return best action given visual observations."""
@@ -182,14 +182,16 @@ class SSPTrainerAgent(LightningModule):
             raise NotImplementedError()
 
 
-    def attn_criterion(self, backprop, out, label):
+    def attn_criterion(self, backprop, out_s, label_s, out_sp, label_sp):
 
         #label = torch.from_numpy(np.array([label])).to(dtype=torch.float, device=out.device)
 
         # Get loss.
         # loss = self.cross_entropy_with_logits(out, label)
 
-        loss = self.criterion(out, label)
+        loss0 = self.criterion(out_s, label_s)
+        loss1 = self.criterion(out_sp, label_sp)
+        loss = loss0 #+ loss1
         # print('loss', loss)
         # print('out, label, loss', out, label, loss)
 
@@ -197,12 +199,13 @@ class SSPTrainerAgent(LightningModule):
         if backprop:
             attn_optim = self._optimizers['attn']
             self.manual_backward(loss, attn_optim)
+            # loss.backward(retain_graph=choose_retain)
             attn_optim.step()
             attn_optim.zero_grad()
 
-        return loss
+        return loss0, loss1
 
-    def process_data(self, max_obj_num, batch_size, lang_goals, found_objs_imgs, labels):
+    def process_data(self, max_obj_num, batch_size, lang_goals, found_objs_pos, found_objs_imgs, labels, labels_sp):
         # x = np.array([found_objs_imgs[0][0], found_objs_imgs[0][0], found_objs_imgs[0][0]])
         token_type_index = []
         position_index = []
@@ -210,7 +213,7 @@ class SSPTrainerAgent(LightningModule):
         emb_decoder = []
         relabel = []
         # label = []
-        batch_size = 3
+        batch_size = 1
         e = []
         # for j in range(batch_size):
             # t = []
@@ -233,31 +236,34 @@ class SSPTrainerAgent(LightningModule):
             #     e.append([found_objs_imgs[j][i], found_objs_imgs[j][i]])  #np.zeros_like(found_objs_imgs[j][i])])
             # random.shuffle(e)
             # emb.append(e)
-        e_left = []
-        e_left.append([found_objs_imgs[0][0], found_objs_imgs[0][0]])
-        for i in range(1, 3):
-            e_left.append([found_objs_imgs[0][i], np.zeros_like(found_objs_imgs[0][i])])
-        random.shuffle(e_left)
-        emb.append(e_left)
-        e_middle = []
-        e_middle.append([found_objs_imgs[1][1], found_objs_imgs[1][1]])
-        e_middle.append([found_objs_imgs[1][0], np.zeros_like(found_objs_imgs[1][0])])
-        e_middle.append([found_objs_imgs[1][2], np.zeros_like(found_objs_imgs[1][2])])
-        random.shuffle(e_middle)
-        emb.append(e_middle)
-        e_right = []
-        e_right.append([found_objs_imgs[2][2], found_objs_imgs[2][2]])
-        e_right.append([found_objs_imgs[2][0], np.zeros_like(found_objs_imgs[2][0])])
-        e_right.append([found_objs_imgs[2][1], np.zeros_like(found_objs_imgs[2][1])])
-        random.shuffle(e_right)
-        emb.append(e_right)
+        # e_left = []
+        # e_left.append([found_objs_imgs[0][0], found_objs_imgs[0][0]])
+        # for i in range(1, 3):
+        #     e_left.append([found_objs_imgs[0][i], np.zeros_like(found_objs_imgs[0][i])])
+        # random.shuffle(e_left)
+        # emb.append(e_left)
+        # e_middle = []
+        # e_middle.append([found_objs_imgs[1][1], found_objs_imgs[1][1]])
+        # e_middle.append([found_objs_imgs[1][0], np.zeros_like(found_objs_imgs[1][0])])
+        # e_middle.append([found_objs_imgs[1][2], np.zeros_like(found_objs_imgs[1][2])])
+        # random.shuffle(e_middle)
+        # emb.append(e_middle)
+        # e_right = []
+        # e_right.append([found_objs_imgs[2][2], found_objs_imgs[2][2]])
+        # e_right.append([found_objs_imgs[2][0], np.zeros_like(found_objs_imgs[2][0])])
+        # e_right.append([found_objs_imgs[2][1], np.zeros_like(found_objs_imgs[2][1])])
+        # random.shuffle(e_right)
+        # emb.append(e_right)
 
 
-        relabel = torch.tensor(labels[:batch_size]).cuda()
+        relabel = labels[:batch_size] #[bz, 12]
         # emb = torch.stack(emb, dim = 0)
-        emb = torch.tensor(emb).cuda()
+        # emb = torch.tensor(found_objs_imgs[:batch_size]).cuda() #[bz, 12, 320, 160, 3]
+        emb = found_objs_imgs[:batch_size] #[bz, 12, 320, 160, 3]
+        pos = found_objs_pos[:batch_size]
+        label_sp = labels_sp[:batch_size]
 
-        return token_type_index, position_index, emb, batch_size, relabel
+        return token_type_index, position_index, emb, batch_size, relabel, label_sp, pos
 
 
     def training_step(self, batch, batch_idx):
@@ -266,26 +272,29 @@ class SSPTrainerAgent(LightningModule):
 
         batch_size = batch['batch_size']
         lang_goals = batch['lang_goals']
-        # found_objs_words = batch['found_objs_words']
+        found_objs_pos = batch['found_objs_pos']
         found_objs_imgs = batch['found_objs_imgs']
         labels = batch['labels']
+        labels_sp = batch['labels_sp']
 
         # Get training losses.
 
         step = self.total_steps + 1
 
-        max_obj_num = 20
+        max_obj_num = 12
 
-        token_type_index, position_index, emb, batch_size, relabel = self.process_data(max_obj_num, batch_size, lang_goals, found_objs_imgs, labels)
+        token_type_index, position_index, emb, batch_size, relabel, label_sp, pos = self.process_data(max_obj_num, batch_size, lang_goals, found_objs_pos, found_objs_imgs, labels, labels_sp)
         labels = torch.tensor(labels).cuda()
 
-        loss0 = self.attn_training_step(max_obj_num, token_type_index, position_index, emb, batch_size, relabel)
+        loss0, loss1 = self.attn_training_step(max_obj_num, token_type_index, position_index, lang_goals, emb, batch_size, relabel, label_sp, pos)
         # if isinstance(self.transport, Attention):
         #     loss1, err1 = self.attn_training_step(frame, compute_err=True)
         # else:
         #     loss1, err1 = self.transport_training_step(frame, compute_err=True)
-        total_loss = loss0
-        self.log('tr/affordanceloss', total_loss)
+        total_loss = loss0 + loss1
+        self.log('tr/loss_s', loss0)
+        self.log('tr/loss_sp', loss1)
+        self.log('tr/total_loss', total_loss)
         self.total_steps = step
 
         self.trainer.train_loop.running_loss.append(total_loss)
@@ -293,7 +302,9 @@ class SSPTrainerAgent(LightningModule):
         self.check_save_iteration()
 
         return dict(
-            affordanceloss=total_loss,
+            loss_s=loss0,
+            loss_sp=loss1,
+            total_loss=total_loss,
         )
 
     def check_save_iteration(self):
@@ -318,47 +329,64 @@ class SSPTrainerAgent(LightningModule):
 
         batch_size = batch['batch_size']
         lang_goals = batch['lang_goals']
-        # found_objs_words = batch['found_objs_words']
+        found_objs_pos = batch['found_objs_pos']
         found_objs_imgs = batch['found_objs_imgs']
         labels = batch['labels']
+        labels_sp = batch['labels_sp']
 
         # Get training losses.
 
-        max_obj_num = 20
+        max_obj_num = 12
 
-        token_type_index, position_index, emb, batch_size, relabel = self.process_data(20, batch_size, lang_goals, found_objs_imgs, labels)
+        token_type_index, position_index, emb, batch_size, relabel, label_sp, pos = self.process_data(max_obj_num, batch_size, lang_goals, found_objs_pos, found_objs_imgs, labels, labels_sp)
         labels = torch.tensor(labels).cuda()
         # print('labels', labels.shape)
 
         total_loss = 0
-        loss = self.attn_training_step(max_obj_num, token_type_index, position_index, emb, batch_size, relabel, backprop=False)
-        total_loss += loss
+        loss0, loss1 = self.attn_training_step(max_obj_num, token_type_index, position_index, lang_goals, emb, batch_size, relabel, label_sp, pos, backprop=False)
+        total_loss = loss0 + loss1
         # total_loss /= self.val_repeats
 
         self.trainer.evaluation_loop.trainer.train_loop.running_loss.append(total_loss)
 
         return dict(
-            val_affordance_loss=total_loss,
+            val_loss_s=loss0,
+            val_loss_sp=loss1,
+            val_total_loss=total_loss,
         )
 
     def training_epoch_end(self, all_outputs):
         super().training_epoch_end(all_outputs)
         utils.set_seed(self.trainer.current_epoch+1)
 
-        mean_train_total_loss = np.mean([v['affordanceloss'].item() for v in all_outputs])
+        mean_train_s_loss = np.mean([v['loss_s'].item() for v in all_outputs])
+        mean_train_sp_loss = np.mean([v['loss_sp'].item() for v in all_outputs])
+        mean_train_total_loss = np.mean([v['total_loss'].item() for v in all_outputs])
 
-        self.log('tr/affordanceloss', mean_train_total_loss)
+        self.log('tr/loss_s', mean_train_s_loss)
+        self.log('tr/loss_sp', mean_train_sp_loss)
+        self.log('tr/total_loss', mean_train_total_loss)
 
     def validation_epoch_end(self, all_outputs):
-        mean_val_total_loss = np.mean([v['val_affordance_loss'].item() for v in all_outputs])
+        mean_val_s_loss = np.mean([v['val_loss_s'].item() for v in all_outputs])
+        mean_val_sp_loss = np.mean([v['val_loss_sp'].item() for v in all_outputs])
+        mean_val_total_loss = np.mean([v['val_total_loss'].item() for v in all_outputs])
 
-        self.log('vl/val_affordance_loss', mean_val_total_loss)
+        self.log('vl/val_loss_s', mean_val_s_loss)
+        self.log('vl/val_loss_sp', mean_val_sp_loss)
+        self.log('vl/val_total_loss', mean_val_total_loss)
 
         print("val loss: {:.2f}".format(mean_val_total_loss))
 
         return dict(
-            val_affordance_loss=mean_val_total_loss,
+            val_loss_s=mean_val_s_loss,
+            val_loss_sp=mean_val_sp_loss,
+            val_total_loss=mean_val_total_loss,
         )
+
+        # return dict(
+        #     val_affordance_loss=mean_val_total_loss,
+        # )
 
     def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_i, second_order_closure, on_tpu, using_native_amp, using_lbfgs):
         pass

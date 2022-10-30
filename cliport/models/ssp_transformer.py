@@ -8,7 +8,7 @@ from cliport.models.core.unet import Up
 from cliport.models.core.clip import build_model, load_clip, tokenize
 
 from cliport.models.core import fusion
-from cliport.models.core.fusion import FusionConvLat, FusionConcat, FusionMult
+from cliport.models.core.fusion import FusionConvLat, FusionConcat, FusionMult, DotAttn
 
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
@@ -312,11 +312,22 @@ class ResNet_Autoencoder(nn.Module):
         # return out
 
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model, preprocess = clip.load("RN50", device=device) #"ViT-B/32", device=device)
+
+# image = preprocess(Image.open("CLIP.png")).unsqueeze(0).to(device)
+# text = clip.tokenize(["a diagram", "a dog", "a cat"]).to(device)
+
+# with torch.no_grad():
+#     image_features = model.encode_image(image)
+#     text_features = model.encode_text(text)
+
+
 class SSPTransformer(nn.Module):
     """ Fuse instruction and objects"""
 
-    def __init__(self, img_size, img_in, img_out, output_dim, cfg, device, preprocess, num_attention_heads=8, encoder_hidden_dim=160, \
-                    encoder_dropout=0.1, encoder_activation="relu", encoder_num_layers=8):
+    def __init__(self, img_size, img_in, img_out, output_dim, cfg, device, preprocess, num_attention_heads=32, encoder_hidden_dim=16, \
+                    encoder_dropout=0.1, encoder_activation="relu", encoder_num_layers=8):  # [8, 16, 8]
         super(SSPTransformer, self).__init__()
         # self.input_shape = input_shape
         self.output_dim = output_dim
@@ -329,7 +340,7 @@ class SSPTransformer(nn.Module):
         self.up_factor = 2 if self.bilinear else 1
         self.preprocess = preprocess
         self.token_type_embeddings = torch.nn.Embedding(2, 8)
-        self.position_embeddings = torch.nn.Embedding(21, 8)
+        self.position_embeddings = torch.nn.Embedding(32, 8)
 
         encoder_layers = TransformerEncoderLayer(256, num_attention_heads,
                                                  encoder_hidden_dim, encoder_dropout, encoder_activation)
@@ -339,8 +350,21 @@ class SSPTransformer(nn.Module):
         self.in_shape = self.get_in_shape((320, 160, 1))
         # self.xnet = models.ResNet43_8s(self.in_shape, 1, self.cfg, self.device, utils.preprocess)
         # self.autoencoder = ResNet_Autoencoder(self.in_shape, 1, self.cfg, self.device, utils.preprocess)
-        self.autoencoder = CLIP_AE(self.in_shape, 1, self.cfg, self.device, utils.preprocess)
-        self.text_encoder = nn.Sequential(nn.Linear(1024, 256), nn.ReLU(True),)
+        # self.autoencoder = CLIP_AE(self.in_shape, 1, self.cfg, self.device, utils.preprocess)
+        self.text_encoder = nn.Sequential(nn.Linear(1024, 512), nn.ReLU(True),
+                                            nn.Linear(512, 240), nn.ReLU(True),)
+        self.imgs_encoder = nn.Sequential(nn.Linear(1024, 512), nn.ReLU(True),
+                                            nn.Linear(512, 240), nn.ReLU(True),)
+                                            # nn.Linear(256, 240), nn.ReLU(True),)
+        self.s_decoder = nn.Sequential(nn.Linear(256, 1024), nn.ReLU(True),
+                                        nn.Linear(1024, 512), nn.ReLU(True),
+                                        nn.Linear(512, 1), nn.ReLU(True),)
+        self.sp_decoder = nn.Sequential(nn.Linear(256, 1024), nn.ReLU(True),
+                                        nn.Linear(1024, 512), nn.ReLU(True),
+                                        nn.Linear(512, 1), nn.ReLU(True),)
+        self.mult_fusion = FusionMult(input_dim=1024)
+        self.pos_emb = nn.Sequential(nn.Linear(2, 256), nn.ReLU(True),)
+        # self.mult_fusion = DotAttn()
         # self._build_img_encoder(img_size, img_out)
         # self._build_decoder()
         # self.clip_model, self.preprocess = clip.load("RN50", device=device) # Load any model
@@ -388,180 +412,453 @@ class SSPTransformer(nn.Module):
         text_mask = torch.where(tokens==0, tokens, 1)  # [1, max_token_len]
         return text_feat, text_emb, text_mask
 
-    def forward(self, total_length, token_type_index, position_index, emb, batch_size):
-        batch_size = 3
+    def forward(self, total_length, token_type_index, position_index, lang_goals, emb, batch_size, labels, label_sp, pos):
         pretrain = False
-        # emb_shape: [batch_size, 3, 2, 320, 160]
+        # emb_shape: [batch_size, 12, 320, 160, 3]
+        lang = []
+        imgs = []
+        with torch.no_grad():
+            for i in range(batch_size):
+                # l_enc_l, l_emb_l, l_mask_l = self.encode_text(lang_goals[i])  #lang_goals[j])
+                lang_g = ["a yellow block", "a blue block", "a red block"]
+                l_enc_l = clip.tokenize(lang_g).to(device)
+                # print('l_enc_l', l_enc_l)
+                words = [j for j in lang_goals[i].split()] 
+                text_features = []
+                for word in words:
+                    text_feature, _, _ = self.encode_text(word)  # [15, 1024]
+                    text_features.append(text_feature)
+                text_features = torch.cat(text_features, dim=0)  # [15, 1024]
+                padding = torch.zeros((38-text_features.shape[0]), 1024).cuda()
+                text_features = torch.cat([text_features, padding], dim=0).cuda()
+                lang.append(text_features)
+                # print('a', text_features.shape)
 
-        l_enc_l, l_emb_l, l_mask_l = self.encode_text('left')  #lang_goals[j])
-        l_enc_m, l_emb_m, l_mask_m = self.encode_text('middle')
-        l_enc_r, l_emb_r, l_mask_r = self.encode_text('right')
-        text_emb = torch.cat([l_enc_l, l_enc_m, l_enc_r], dim=0).float() # [batch_size, 1024]
-        text_emb = self.text_encoder(text_emb).reshape(batch_size, 1, 256) # [batch_size, 1, 256]
+                img = []
+                for j in range(12):
+                    # plt.imshow(emb[i][j])
+                    # plt.savefig(f'./{j}.jpg')
+                    # plt.close()
 
-        nc = torch.zeros_like(emb)
-        x = torch.cat([emb, nc], dim=1)
-        input = x[:,:,0,:,:].reshape(batch_size*6, 1, 320, 160)
-        input = torch.cat([input, input, input], dim=1)
-        label = x[:,:,1,:,:].reshape(batch_size, 6, 320, 160)
+                    image = preprocess(Image.fromarray(emb[i][j])).unsqueeze(0).to(device)
+                    image_features = model.encode_image(image)  # [1, 1024]
+                    img.append(image_features)
+
+                    # logits_per_image, logits_per_text = model(image, l_enc_l)
+                    # probs = logits_per_image.softmax(dim=-1).cpu().numpy()
+                    # print(probs)
+                    # print(fff)
+                    # print('b', image_features.shape)
+                img_emb = torch.cat(img, dim=0).float() # [12, 1024]
+
+                imgs.append(img_emb)
+
+        #     langx = lang_goals[0]
+
+        #     # langx = ''.join([words[8], words[9], words[10]])
+        #     langx = clip.tokenize(langx).to(device)
+        #     text_langx = model.encode_text(langx).float()
+        #     # langx = ''.join([words[8], words[9], words[10]])
+        #     # text_langx, _, _ = self.encode_text(langx)
+        #     # text_langx = text_langx.float().cuda()
+        
+        # text_langx = self.text_encoder(text_langx)
+        # text_xx = torch.cat([text_langx for i in range(batch_size*12)], dim=0).cuda()
+
+        # # imgs [bz, 12, 1, 512]
+
+        # text_emb = torch.stack(lang, dim=0).float() # [batch_size, 38, 1024]
+        # text_emb = text_emb.reshape(batch_size*38, 1024) # [batch_size*38, 1024]
+        # text_emb = self.text_encoder(text_emb).reshape(batch_size, 38, 256) # [batch_size, 1, 256]
+        # imgs_emb = torch.stack(imgs, dim=0).float() # [batch_size, 12, 512]
+        # imgs_emb = imgs_emb.reshape(batch_size*12, 1024) # [batch_size*12, 256]
+
+        # imgs_emb = self.imgs_encoder(imgs_emb)
+        # # imgs_emb = F.cosine_similarity(text_xx, imgs_emb, dim=-1)
+        # # print('imgs_emb', imgs_emb.shape)
+        # pos = torch.tensor(pos).cuda().reshape(batch_size*12, 2).float()
+        # pos = self.pos_emb(pos)
+
+        # # imgs_emb = self.mult_fusion(text_xx, imgs_emb)
+        # # imgs_emb = self.mult_fusion(pos, imgs_emb)
+        # imgs_emb = imgs_emb.reshape(batch_size, 12, 256) # [batch_size, 12, 256]
+        # input = torch.cat([text_emb, imgs_emb], dim=1)
+        # latent_input = input.transpose(1, 0)  # [50, batch_size, 256]
+        # encode = self.encoder(latent_input) # [50, batch_size, 256]
+        # encode = latent_input
+        # decoder_in = encode[38:50].transpose(1,0) # [batch_size, 12, 256]
+        # decoder_in = decoder_in.reshape(batch_size*12, 256)
+        # decoder_out = self.decoder(decoder_in).reshape(batch_size, 12)
+        # decoder_out = F.softmax(decoder_out, dim=-1)
+        # decoder_out = decoder_out.reshape(batch_size, 12, 1).float()
+
+
+        # labels = np.array(labels)
+        # # labels = np.where(labels > 1, 0, labels)
+        # # print(labels)
+        # labels = torch.tensor(labels).cuda()
+        # labels = labels.reshape(batch_size, 12).float()
+        # labels = F.softmax(labels, dim=-1)
+        # labels = labels.reshape(batch_size, 12, 1).float()
+
+        ############
+        loc_dict = ['left', 'right', 'top', 'bottom', 'middle']
+        labels_s = []
+        labels_sp = []
+        new_lang = []
+        new_pos = []
+        new_imgs = []
+        blocks = []
+        bowls = []
+        for i, j in enumerate(labels[0]):
+            if j == 1:
+                blocks.append(i)
+            if j == 2:
+                bowls.append(i)
+
+        def find_target(objs, positions, ins):
+            loc = []
+            for i in objs:
+                loc.append([i, positions[i]])
+            if ins == 'left':
+                loc.sort(key=lambda x: x[1][0])
+                return loc[0][0]
+            if ins == 'middle':
+                loc.sort(key=lambda x: x[1][0])
+                return loc[1][0]
+            if ins == 'right':
+                loc.sort(key=lambda x: x[1][0])
+                return loc[2][0]
+            if ins == 'top':
+                loc.sort(key=lambda x: x[1][1])
+                return loc[0][0]
+            if ins == 'bottom':
+                loc.sort(key=lambda x: x[1][1])
+                return loc[2][0]
+
+        img_emb = np.asarray(img_emb.cpu())
+        for a in range(5):
+            for b in range(5):
+                new_word = copy.deepcopy(words)
+                new_word[8] = loc_dict[a]
+                new_word[12] = loc_dict[b]
+                # new_lang.append(' '.join(new_word))
+                new_lang.append(new_word)
+                # print('new_lang', new_lang)
+                id_block = find_target(blocks, pos[0], loc_dict[a])
+                id_bowl = find_target(bowls, pos[0], loc_dict[b])
+
+                # posx = []
+                # for i in range(3):
+                #     posx.append(pos[0][blocks[i]])  # = pos[0][i for i in blocks]
+                new_pos.append([[xx[0]/320, xx[1]/160] for xx in pos[0]])
+                # new_label.append([0 for i in range(12)])
+                # new_label.append([0 for i in blocks])
+                labels_s.append([0 for i in range(12)])
+                labels_sp.append([0 for i in range(12)])
+                for i in blocks:
+                    labels_s[-1][i] = 1
+                for i in bowls:
+                    labels_s[-1][i] = 1
+                labels_sp[-1][id_block] = 1
+                labels_sp[-1][id_bowl] = 1
+                # imgx = []
+                # for i in range(3):
+                #     imgx.append(img_emb[blocks[i]])  # = pos[0][i for i in blocks]
+                #     # print('asdfas', img_emb[blocks[i]].shape)
+                # # print(ff)
+                new_imgs.append(img_emb)
+
+        imgs_emb = torch.tensor(new_imgs).cuda().reshape(25, 12, 1024).float()
+        text_langx = []
+        with torch.no_grad():
+            for i in range(25):
+                langx = clip.tokenize(new_lang[i]).to(device)
+                langx = model.encode_text(langx).float().cuda()   #[15, 1024]
+                text_langx.append(langx)
+        # print('text_langx', text_langx.shape) #[25, 1024]
+        # print(fuck)
+        
+        # text_xx = torch.stack([text_langx for i in range(3)], dim=1).cuda() #[25, 12, 1024]
+        # text_emb = text_xx.reshape(25*3, 1024)
+        text_langx = torch.stack(text_langx, dim=0) #[25, 15, 1024]
+        text_langx = text_langx.reshape(25*15, 1024)
+        text_emb = self.text_encoder(text_langx) # [25*15, 248]
+        text_emb = text_emb.reshape(25, 15, 240).cuda()
+        padding = torch.zeros(25, 5, 240).cuda()
+        text_emb = torch.cat([text_emb, padding], dim=1)
+
+        # imgs [bz, 12, 1, 512]
+
+        # text_emb = torch.stack(lang, dim=0).float() # [25, 1, 1024]
+        # text_emb = text_emb.reshape(batch_size*38, 1024) # [batch_size*38, 1024]
+        # text_emb = self.text_encoder(text_emb).reshape(batch_size, 38, 256) # [batch_size, 1, 256]
+        # imgs_emb = torch.stack(new_imgs, dim=0).cuda().float() # [25, 12, 1024]
+        imgs_emb = imgs_emb.reshape(25*12, 1024) # [batch_size*12, 256]
+
+        imgs_emb = self.imgs_encoder(imgs_emb) # [25*12, 240]
+        pos = torch.tensor(new_pos).cuda().reshape(25*12, 2).float()
+        pos = self.pos_emb(pos) # [25*12, 128]
+        pos = pos.reshape(25*12, 256)
+        # imgs_emb = torch.cat([imgs_emb, pos], dim=1)
+        # imgs_emb = imgs_emb.reshape(25, 12, 240)
+        # imgs_emb = self.mult_fusion(imgs_emb, pos)
+        imgs_emb = imgs_emb.reshape(25, 12, 240)
+        input = torch.cat([text_emb, imgs_emb], dim=1) # [25, 32, 240]
+
+        position_index = [[] for i in range(25)]
+        for i in range(25):
+            for j in range(20):
+                position_index[i].append(j)
+            for k in range(12):
+                position_index[i].append(20+k)
+            # for k in range(12):
+            #     position_index[i].append(20+k)
+        position_index = torch.LongTensor(position_index).cuda()
+        position_embed = self.position_embeddings(position_index) # [25, 32, 8]
+
+        type_index = [[] for i in range(25)]
+        for i in range(25):
+            for j in range(20):
+                type_index[i].append(0)
+            for k in range(12):
+                type_index[i].append(1)
+            # for k in range(12):
+            #     type_index[i].append(2)
+        type_index = torch.LongTensor(type_index).cuda()
+        type_embed = self.token_type_embeddings(type_index) # [25, 32, 8]
+
+        input = torch.cat([input, position_embed, type_embed], dim=-1) # [25, 32, 256]
+        latent_input = input.transpose(1, 0)  # [32, 25, 256]
+        encode = self.encoder(latent_input) # [32, 25, 256]
+        # encode = latent_input
+        out = encode[20:32].transpose(1,0) # [25, 12, 256]
+        # out = out.reshape(25, 12, 2, 128)
+        semantic_out = out # [:,:,0,:] # [25, 12, 128]
+        semantic_out = semantic_out.reshape(25*12, 256)
+        semantic_out = self.mult_fusion(semantic_out, pos)
+        sp_out = out # [:,:,1,:] # [25, 12, 128] encode[32:44].transpose(1,0) # [25, 12, 256]
+        sp_out = sp_out.reshape(25*12, 256)
+        sp_out = self.mult_fusion(sp_out, pos)
+        # imgs_emb = self.mult_fusion(text_emb, imgs_emb)
+        # imgs_emb = self.mult_fusion(pos, imgs_emb)
+
+        semantic_out = self.s_decoder(semantic_out).reshape(25, 12)
+        semantic_out_f = F.softmax(semantic_out, dim=-1)
+        semantic_out_f = semantic_out_f.reshape(25, 12, 1).float()
+        sp_out_f = self.sp_decoder(sp_out).reshape(25, 12)
+        sp_out_f = self.mult_fusion(semantic_out, sp_out_f)
+        sp_out_f = F.softmax(sp_out_f, dim=-1)
+        sp_out_f = sp_out_f.reshape(25, 12, 1).float()
+
+        labels_s = np.array(labels_s)
+        labels_sp = np.array(labels_sp)
+        # labels = np.where(labels > 1, 1, labels)
+        # labels_sp = np.array(label_sp)
+        # labels = labels + labels_sp
+        # print(labels)
+
+        labels_s = labels_sp #labels_s + labels_sp
+        labels_s = torch.tensor(labels_s).cuda()
+        labels_s = labels_s.reshape(25, 12).float()
+        labels_s = F.softmax(labels_s, dim=-1)
+        labels_s = labels_s.reshape(25, 12, 1).float()
+        print('semantic_out', semantic_out_f[0])
+        print('labels_s', labels_s[0])
+
+        labels_sp = torch.tensor(labels_sp).cuda()
+        labels_sp = labels_sp.reshape(25, 12).float()
+        labels_sp = F.softmax(labels_sp, dim=-1)
+        labels_sp = labels_sp.reshape(25, 12, 1).float()
+        print('sp_out', sp_out_f[0])
+        print('labels_sp', labels_sp[0])
+
+        return semantic_out_f, labels_s, sp_out_f, labels_sp
+
+        ############
+
+        # labels = np.array(labels)
+        # labels = np.where(labels > 1, 1, labels)
+        # # labels_sp = np.array(label_sp)
+        # # labels = labels + labels_sp
+        # # print(labels)
+        # labels = torch.tensor(labels).cuda()
+        # labels = labels.reshape(batch_size, 12).float()
+        # labels = F.softmax(labels, dim=-1)
+        # labels = labels.reshape(batch_size, 12, 1).float()
+        # print('decoder_out', decoder_out)
+        # print('labels', labels)
+        # return decoder_out, labels    
+
+
+
+
+        # nc = torch.zeros_like(emb)
+        # x = torch.cat([emb, nc], dim=1)
+        # input = x[:,:,0,:,:].reshape(batch_size*6, 1, 320, 160)
+        # input = torch.cat([input, input, input], dim=1)
+        # label = x[:,:,1,:,:].reshape(batch_size, 6, 320, 160)
         # label = torch.cat([label, label, label], dim=1)
 
-        if pretrain:
-            latent = self.autoencoder.encoder_forward(input) # [batch_size*6, 1024]
-            prediction = self.autoencoder.decoder_forward(latent)
-            prediction = torch.reshape(prediction, ((batch_size, 6, 320, 160)))
+        # if pretrain:
+        #     latent = self.autoencoder.encoder_forward(input) # [batch_size*6, 1024]
+        #     prediction = self.autoencoder.decoder_forward(latent)
+        #     prediction = torch.reshape(prediction, ((batch_size, 6, 320, 160)))
 
-        else:
-            # with torch.no_grad():
-            latent = self.autoencoder.encoder_forward(input) # [batch_size*6, 256]
-            latent = latent.reshape(batch_size, 6, 256)
-            latent_input = torch.cat([text_emb, latent], dim=1)
-            latent_input = latent_input.transpose(1, 0)  # [7, batch_size, 256]
-            encode = self.encoder(latent_input) # [7, batch_size, 256]
-            decoder_in = encode[1:7].transpose(1,0) # [batch_size, 6, 256]
+        # else:
+        #     # with torch.no_grad():
+        #     latent = self.autoencoder.encoder_forward(input) # [batch_size*6, 256]
+        #     latent = latent.reshape(batch_size, 6, 256)
+        #     latent_input = torch.cat([text_emb, latent], dim=1)
+        #     latent_input = latent_input.transpose(1, 0)  # [7, batch_size, 256]
+        #     encode = self.encoder(latent_input) # [7, batch_size, 256]
+        #     decoder_in = encode[1:7].transpose(1,0) # [batch_size, 6, 256]
 
-            prediction = decoder_in.reshape(batch_size*6, 256)
-            prediction = self.autoencoder.decoder_forward(prediction)
-            prediction = torch.reshape(prediction, ((batch_size, 6, 320, 160)))
+        #     prediction = decoder_in.reshape(batch_size*6, 256)
+        #     prediction = self.autoencoder.decoder_forward(prediction)
+        #     prediction = torch.reshape(prediction, ((batch_size, 6, 320, 160)))
 
-            # visualization
-        with torch.no_grad():    
-            predictions = prediction.clone()
-            predictions0 = predictions[0][0].detach().cpu()
-            predictions0 = np.asarray(predictions0)
-            # predictions0 = np.ma.masked_where(predictions0 < 0, predictions0)
-            predictions0 = np.where(predictions0 > 0, predictions0, 0) 
-            predictions1 = predictions[0][1].detach().cpu()
-            predictions1 = np.asarray(predictions1)
-            predictions1 = np.where(predictions1 > 0, predictions1, 0) 
-            predictions2 = predictions[0][2].detach().cpu()
-            predictions2 = np.asarray(predictions2)      
-            predictions2 = np.where(predictions2 > 0, predictions2, 0) 
+        #     # visualization
+        # with torch.no_grad():    
+        #     predictions = prediction.clone()
+        #     predictions0 = predictions[0][0].detach().cpu()
+        #     predictions0 = np.asarray(predictions0)
+        #     # predictions0 = np.ma.masked_where(predictions0 < 0, predictions0)
+        #     predictions0 = np.where(predictions0 > 0, predictions0, 0) 
+        #     predictions1 = predictions[0][1].detach().cpu()
+        #     predictions1 = np.asarray(predictions1)
+        #     predictions1 = np.where(predictions1 > 0, predictions1, 0) 
+        #     predictions2 = predictions[0][2].detach().cpu()
+        #     predictions2 = np.asarray(predictions2)      
+        #     predictions2 = np.where(predictions2 > 0, predictions2, 0) 
 
-            # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
-            # label = label.reshape(batch_size, 6, 1024)
-            truth = label.clone()
-            # truth = truth.reshape(batch_size*6, 1024)
-            # truth = self.autoencoder.decoder_forward(truth)
-            # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
+        #     # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
+        #     # label = label.reshape(batch_size, 6, 1024)
+        #     truth = label.clone()
+        #     # truth = truth.reshape(batch_size*6, 1024)
+        #     # truth = self.autoencoder.decoder_forward(truth)
+        #     # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
 
-            truth0 = truth[0][0].detach().cpu()
-            truth0 = np.asarray(truth0)
-            truth0 = np.where(truth0 > 0, truth0, 0) 
-            truth1 = truth[0][1].detach().cpu()
-            truth1 = np.asarray(truth1)
-            truth1 = np.where(truth1 > 0, truth1, 0) 
-            truth2 = truth[0][2].detach().cpu()
-            truth2 = np.asarray(truth2)   
-            truth2 = np.where(truth2 > 0, truth2, 0)   
+        #     truth0 = truth[0][0].detach().cpu()
+        #     truth0 = np.asarray(truth0)
+        #     truth0 = np.where(truth0 > 0, truth0, 0) 
+        #     truth1 = truth[0][1].detach().cpu()
+        #     truth1 = np.asarray(truth1)
+        #     truth1 = np.where(truth1 > 0, truth1, 0) 
+        #     truth2 = truth[0][2].detach().cpu()
+        #     truth2 = np.asarray(truth2)   
+        #     truth2 = np.where(truth2 > 0, truth2, 0)   
 
-            plt.subplot(2, 3, 1)
-            plt.imshow(predictions0)
-            plt.subplot(2, 3, 4)
-            plt.imshow(truth0)
-            plt.subplot(2, 3, 2)
-            plt.imshow(predictions1)
-            plt.subplot(2, 3, 5)
-            plt.imshow(truth1)
-            plt.subplot(2, 3, 3)
-            plt.imshow(predictions2)
-            plt.subplot(2, 3, 6)
-            plt.imshow(truth2)
-            plt.show()
-            plt.savefig('./visualization1.jpg')
-            plt.close()
+        #     plt.subplot(2, 3, 1)
+        #     plt.imshow(predictions0)
+        #     plt.subplot(2, 3, 4)
+        #     plt.imshow(truth0)
+        #     plt.subplot(2, 3, 2)
+        #     plt.imshow(predictions1)
+        #     plt.subplot(2, 3, 5)
+        #     plt.imshow(truth1)
+        #     plt.subplot(2, 3, 3)
+        #     plt.imshow(predictions2)
+        #     plt.subplot(2, 3, 6)
+        #     plt.imshow(truth2)
+        #     plt.show()
+        #     plt.savefig('./visualization1.jpg')
+        #     plt.close()
 
-        with torch.no_grad():    
-            predictions = prediction.clone()
-            predictions0 = predictions[1][0].detach().cpu()
-            predictions0 = np.asarray(predictions0)
-            predictions0 = np.where(predictions0 > 0, predictions0, 0) 
-            predictions1 = predictions[1][1].detach().cpu()
-            predictions1 = np.asarray(predictions1)
-            predictions1 = np.where(predictions1 > 0, predictions1, 0) 
-            predictions2 = predictions[1][2].detach().cpu()
-            predictions2 = np.asarray(predictions2)      
-            predictions2 = np.where(predictions2 > 0, predictions2, 0) 
+        # with torch.no_grad():    
+        #     predictions = prediction.clone()
+        #     predictions0 = predictions[1][0].detach().cpu()
+        #     predictions0 = np.asarray(predictions0)
+        #     predictions0 = np.where(predictions0 > 0, predictions0, 0) 
+        #     predictions1 = predictions[1][1].detach().cpu()
+        #     predictions1 = np.asarray(predictions1)
+        #     predictions1 = np.where(predictions1 > 0, predictions1, 0) 
+        #     predictions2 = predictions[1][2].detach().cpu()
+        #     predictions2 = np.asarray(predictions2)      
+        #     predictions2 = np.where(predictions2 > 0, predictions2, 0) 
 
-            # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
-            # label = label.reshape(batch_size, 6, 1024)
-            truth = label.clone()
-            # truth = truth.reshape(batch_size*6, 1024)
-            # truth = self.autoencoder.decoder_forward(truth)
-            # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
+        #     # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
+        #     # label = label.reshape(batch_size, 6, 1024)
+        #     truth = label.clone()
+        #     # truth = truth.reshape(batch_size*6, 1024)
+        #     # truth = self.autoencoder.decoder_forward(truth)
+        #     # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
 
-            truth0 = truth[1][0].detach().cpu()
-            truth0 = np.asarray(truth0)
-            truth0 = np.where(truth0 > 0, truth0, 0) 
-            truth1 = truth[1][1].detach().cpu()
-            truth1 = np.asarray(truth1)
-            truth1 = np.where(truth1 > 0, truth1, 0) 
-            truth2 = truth[1][2].detach().cpu()
-            truth2 = np.asarray(truth2)      
-            truth2 = np.where(truth2 > 0, truth2, 0) 
+        #     truth0 = truth[1][0].detach().cpu()
+        #     truth0 = np.asarray(truth0)
+        #     truth0 = np.where(truth0 > 0, truth0, 0) 
+        #     truth1 = truth[1][1].detach().cpu()
+        #     truth1 = np.asarray(truth1)
+        #     truth1 = np.where(truth1 > 0, truth1, 0) 
+        #     truth2 = truth[1][2].detach().cpu()
+        #     truth2 = np.asarray(truth2)      
+        #     truth2 = np.where(truth2 > 0, truth2, 0) 
 
-            plt.subplot(2, 3, 1)
-            plt.imshow(predictions0)
-            plt.subplot(2, 3, 4)
-            plt.imshow(truth0)
-            plt.subplot(2, 3, 2)
-            plt.imshow(predictions1)
-            plt.subplot(2, 3, 5)
-            plt.imshow(truth1)
-            plt.subplot(2, 3, 3)
-            plt.imshow(predictions2)
-            plt.subplot(2, 3, 6)
-            plt.imshow(truth2)
-            plt.show()
-            plt.savefig('./visualization2.jpg')
-            plt.close()
+        #     plt.subplot(2, 3, 1)
+        #     plt.imshow(predictions0)
+        #     plt.subplot(2, 3, 4)
+        #     plt.imshow(truth0)
+        #     plt.subplot(2, 3, 2)
+        #     plt.imshow(predictions1)
+        #     plt.subplot(2, 3, 5)
+        #     plt.imshow(truth1)
+        #     plt.subplot(2, 3, 3)
+        #     plt.imshow(predictions2)
+        #     plt.subplot(2, 3, 6)
+        #     plt.imshow(truth2)
+        #     plt.show()
+        #     plt.savefig('./visualization2.jpg')
+        #     plt.close()
 
-        with torch.no_grad():    
-            predictions = prediction.clone()
-            predictions0 = predictions[2][0].detach().cpu()
-            predictions0 = np.asarray(predictions0)
-            predictions0 = np.where(predictions0 > 0, predictions0, 0) 
-            predictions1 = predictions[2][1].detach().cpu()
-            predictions1 = np.asarray(predictions1)
-            predictions1 = np.where(predictions1 > 0, predictions1, 0) 
-            predictions2 = predictions[2][2].detach().cpu()
-            predictions2 = np.asarray(predictions2)     
-            predictions2 = np.where(predictions2 > 0, predictions2, 0)  
+        # with torch.no_grad():    
+        #     predictions = prediction.clone()
+        #     predictions0 = predictions[2][0].detach().cpu()
+        #     predictions0 = np.asarray(predictions0)
+        #     predictions0 = np.where(predictions0 > 0, predictions0, 0) 
+        #     predictions1 = predictions[2][1].detach().cpu()
+        #     predictions1 = np.asarray(predictions1)
+        #     predictions1 = np.where(predictions1 > 0, predictions1, 0) 
+        #     predictions2 = predictions[2][2].detach().cpu()
+        #     predictions2 = np.asarray(predictions2)     
+        #     predictions2 = np.where(predictions2 > 0, predictions2, 0)  
 
-            # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
-            # label = label.reshape(batch_size, 6, 1024)
-            truth = label.clone()
-            # truth = truth.reshape(batch_size*6, 1024)
-            # truth = self.autoencoder.decoder_forward(truth)
-            # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
+        #     # label = self.autoencoder.encoder_forward(label) # [batch_size*6, 1024]
+        #     # label = label.reshape(batch_size, 6, 1024)
+        #     truth = label.clone()
+        #     # truth = truth.reshape(batch_size*6, 1024)
+        #     # truth = self.autoencoder.decoder_forward(truth)
+        #     # truth = torch.reshape(truth, ((batch_size, 6, 320, 160)))
 
-            truth0 = truth[2][0].detach().cpu()
-            truth0 = np.asarray(truth0)
-            truth0 = np.where(truth0 > 0, truth0, 0) 
-            truth1 = truth[2][1].detach().cpu()
-            truth1 = np.asarray(truth1)
-            truth1 = np.where(truth1 > 0, truth1, 0) 
-            truth2 = truth[2][2].detach().cpu()
-            truth2 = np.asarray(truth2)      
-            truth2 = np.where(truth2 > 0, truth2, 0) 
+        #     truth0 = truth[2][0].detach().cpu()
+        #     truth0 = np.asarray(truth0)
+        #     truth0 = np.where(truth0 > 0, truth0, 0) 
+        #     truth1 = truth[2][1].detach().cpu()
+        #     truth1 = np.asarray(truth1)
+        #     truth1 = np.where(truth1 > 0, truth1, 0) 
+        #     truth2 = truth[2][2].detach().cpu()
+        #     truth2 = np.asarray(truth2)      
+        #     truth2 = np.where(truth2 > 0, truth2, 0) 
 
-            plt.subplot(2, 3, 1)
-            plt.imshow(predictions0)
-            plt.subplot(2, 3, 4)
-            plt.imshow(truth0)
-            plt.subplot(2, 3, 2)
-            plt.imshow(predictions1)
-            plt.subplot(2, 3, 5)
-            plt.imshow(truth1)
-            plt.subplot(2, 3, 3)
-            plt.imshow(predictions2)
-            plt.subplot(2, 3, 6)
-            plt.imshow(truth2)
-            plt.show()
-            plt.savefig('./visualization3.jpg')
-            plt.close()
+        #     plt.subplot(2, 3, 1)
+        #     plt.imshow(predictions0)
+        #     plt.subplot(2, 3, 4)
+        #     plt.imshow(truth0)
+        #     plt.subplot(2, 3, 2)
+        #     plt.imshow(predictions1)
+        #     plt.subplot(2, 3, 5)
+        #     plt.imshow(truth1)
+        #     plt.subplot(2, 3, 3)
+        #     plt.imshow(predictions2)
+        #     plt.subplot(2, 3, 6)
+        #     plt.imshow(truth2)
+        #     plt.show()
+        #     plt.savefig('./visualization3.jpg')
+        #     plt.close()
 
-        return prediction, label            
+        # return prediction, label            
+
+
+
 
     # def forward(self, total_length, token_type_index, position_index, emb, emb_decoder):
         # predictions = torch.mean(predictions, dim=0)

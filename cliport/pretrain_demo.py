@@ -9,6 +9,10 @@ from cliport import tasks
 from cliport.dataset import RavensDataset
 from cliport.environments.environment import Environment
 
+from PIL import Image
+import matplotlib
+import matplotlib.pyplot as plt
+
 
 @hydra.main(config_path='./cfg', config_name='data')
 def main(cfg):
@@ -59,13 +63,17 @@ def main(cfg):
         obs = env.reset()
         info = env.info
 
+        plt.imshow(obs['color'][0])
+        plt.savefig(f'./ff.jpg')
+        plt.close()
+
         # Unlikely, but a safety check to prevent leaks.
         if task.mode == 'val' and seed > (-1 + 10000):
             raise Exception("!!! Seeds for val set will overlap with the test set !!!")
 
-        batch_size, lang_goals, found_objs, batch = task.get_dataset(env)
+        batch_size, loc_dict, obj_pos, batch = task.get_dataset(env)
 
-        episode.append((obs, None, batch_size, lang_goals, found_objs, batch))
+        episode.append((obs, None, batch_size, loc_dict, obj_pos, batch))
         dataset.add(seed, episode)
 
 

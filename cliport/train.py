@@ -45,7 +45,7 @@ def main(cfg):
         checkpoint_callback=checkpoint_callback,
         max_epochs=max_epochs,
         automatic_optimization=False,
-        check_val_every_n_epoch=10, #max_epochs // 200,
+        check_val_every_n_epoch=1, #max_epochs // 200,
         resume_from_checkpoint=last_checkpoint,
     )
 

@@ -799,21 +799,58 @@ class SSPretrainDataset(Dataset):
 
     def process_sample(self, datum, augment=True):
         # Get training labels from data sample.
-        (obs, act, batch_size, lang_goals, found_objs, batch) = datum
+        (obs, act, batch_size, loc_dict, obj_pos, batch) = datum
 
-        words = []
-        imgs = []
-        labels = []
-        for key, value in batch.items():
-            imgs.append([list(found_objs.values())[key[j]] for j in range(3)])
-            labels.append(found_objs[value])
+        lang = []
+        imgs = [[] for i in range(batch_size)]
+        labels = [[] for i in range(batch_size)]
+        labels_sp = [[] for i in range(batch_size)]
+        pos = [[] for i in range(batch_size)]
+        for i in range(batch_size):
+            lang.append(batch[i]['lang_goal'])
+            temp = [[k, v] for k,v in batch[i]['labels'].items()]
+            random.shuffle(temp)
+            labels[i] = [a[1] for index,a in enumerate(temp)]
+            for j in range(len(temp)):
+                imgs[i].append(batch[i]['imgs'][temp[j][0]])
+                labels_sp[i].append(batch[i]['labels_sp'][temp[j][0]])
+                pos[i].append([int((obj_pos[temp[j][0]][0][1]+0.5)*320), int((obj_pos[temp[j][0]][0][0]-0.25)/0.5*160)])
+
+        center_left = 25
+        center_right = 135
+        center_top = 295
+        center_down = 25
+
+        for i in range(batch_size):
+            for j in range(len(pos[0])):
+                if pos[i][j][0] <= center_down:
+                    crop_center_y = center_down
+                elif pos[i][j][0] >= center_top:
+                    crop_center_y = center_top
+                else:
+                    crop_center_y = pos[i][j][0]
+
+                if pos[i][j][1] <= center_left:
+                    crop_center_x = center_left
+                elif pos[i][j][1] >= center_right:
+                    crop_center_x = center_right
+                else:
+                    crop_center_x = pos[i][j][1]
+
+                center_crop = [crop_center_y, crop_center_x]
+                imgs[i][j] = imgs[i][j][(crop_center_y-25):(crop_center_y+25), (crop_center_x-25):(crop_center_x+25), :]
+
+        # for key, value in batch.items():
+        #     imgs.append([list(found_objs.values())[key[j]] for j in range(3)])
+        #     labels.append(found_objs[value])
 
         sample = {
             'batch_size': batch_size,
-            'lang_goals': lang_goals,
-            # 'found_objs_words': words,
+            'lang_goals': lang,
+            'found_objs_pos': pos,
             'found_objs_imgs': imgs,
-            'labels': labels
+            'labels': labels,
+            'labels_sp': labels_sp
         }
 
         return sample
