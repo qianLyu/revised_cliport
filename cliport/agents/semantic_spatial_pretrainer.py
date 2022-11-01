@@ -191,7 +191,7 @@ class SSPTrainerAgent(LightningModule):
 
         loss0 = self.criterion(out_s, label_s)
         loss1 = self.criterion(out_sp, label_sp)
-        loss = loss0 #+ loss1
+        loss = loss1
         # print('loss', loss)
         # print('out, label, loss', out, label, loss)
 
@@ -213,7 +213,7 @@ class SSPTrainerAgent(LightningModule):
         emb_decoder = []
         relabel = []
         # label = []
-        batch_size = 1
+        batch_size = 6
         e = []
         # for j in range(batch_size):
             # t = []
@@ -314,7 +314,8 @@ class SSPTrainerAgent(LightningModule):
             # save lastest checkpoint
             # print(f"Saving last.ckpt Epoch: {self.trainer.current_epoch} | Global Step: {self.trainer.global_step}")
             self.save_last_checkpoint()
-            # torch.save(self.attention.state_dict(), os.path.join('/home/luoqian/revised_cliport', 'pretrained_ae_checkpoints/pretrained_ae.pth'))
+            # torch.save(self.attention.state_dict(), os.path.join('/home/luoqian/revised_cliport', 'pretrained_transformer/pretrained_0.pth'))
+            # print("saved!!!")
             # torch.save(self.attention.state_dict(), os.path.join(self.cfg['train']['train_dir'], 'pretrained_ae_checkpoints/pretrained_ae.pth'))
             #print('afja')
 

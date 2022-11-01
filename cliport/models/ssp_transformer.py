@@ -327,7 +327,7 @@ class SSPTransformer(nn.Module):
     """ Fuse instruction and objects"""
 
     def __init__(self, img_size, img_in, img_out, output_dim, cfg, device, preprocess, num_attention_heads=32, encoder_hidden_dim=16, \
-                    encoder_dropout=0.1, encoder_activation="relu", encoder_num_layers=8):  # [8, 16, 8]
+                    encoder_dropout=0.1, encoder_activation="relu", encoder_num_layers=8):  # [8/32, 16, 8]
         super(SSPTransformer, self).__init__()
         # self.input_shape = input_shape
         self.output_dim = output_dim
@@ -342,7 +342,7 @@ class SSPTransformer(nn.Module):
         self.token_type_embeddings = torch.nn.Embedding(2, 8)
         self.position_embeddings = torch.nn.Embedding(32, 8)
 
-        encoder_layers = TransformerEncoderLayer(256, num_attention_heads,
+        encoder_layers = TransformerEncoderLayer(512, num_attention_heads,
                                                  encoder_hidden_dim, encoder_dropout, encoder_activation)
         self.encoder = TransformerEncoder(encoder_layers, encoder_num_layers)
         self._load_clip()
@@ -356,14 +356,17 @@ class SSPTransformer(nn.Module):
         self.imgs_encoder = nn.Sequential(nn.Linear(1024, 512), nn.ReLU(True),
                                             nn.Linear(512, 240), nn.ReLU(True),)
                                             # nn.Linear(256, 240), nn.ReLU(True),)
-        self.s_decoder = nn.Sequential(nn.Linear(256, 1024), nn.ReLU(True),
+        self.s_decoder = nn.Sequential(nn.Linear(512, 1024), nn.ReLU(True),
                                         nn.Linear(1024, 512), nn.ReLU(True),
                                         nn.Linear(512, 1), nn.ReLU(True),)
-        self.sp_decoder = nn.Sequential(nn.Linear(256, 1024), nn.ReLU(True),
+        self.sp_decoder = nn.Sequential(nn.Linear(512, 1024), nn.ReLU(True),
                                         nn.Linear(1024, 512), nn.ReLU(True),
                                         nn.Linear(512, 1), nn.ReLU(True),)
         self.mult_fusion = FusionMult(input_dim=1024)
         self.pos_emb = nn.Sequential(nn.Linear(2, 256), nn.ReLU(True),)
+        self.sp_a = nn.Sequential(nn.Linear(512, 1024), nn.ReLU(True),
+                                        nn.Linear(1024, 512), nn.ReLU(True),
+                                        nn.Linear(512, 1), nn.ReLU(True),)
         # self.mult_fusion = DotAttn()
         # self._build_img_encoder(img_size, img_out)
         # self._build_decoder()
@@ -415,43 +418,33 @@ class SSPTransformer(nn.Module):
     def forward(self, total_length, token_type_index, position_index, lang_goals, emb, batch_size, labels, label_sp, pos):
         pretrain = False
         # emb_shape: [batch_size, 12, 320, 160, 3]
-        lang = []
-        imgs = []
-        with torch.no_grad():
-            for i in range(batch_size):
-                # l_enc_l, l_emb_l, l_mask_l = self.encode_text(lang_goals[i])  #lang_goals[j])
-                lang_g = ["a yellow block", "a blue block", "a red block"]
-                l_enc_l = clip.tokenize(lang_g).to(device)
-                # print('l_enc_l', l_enc_l)
-                words = [j for j in lang_goals[i].split()] 
-                text_features = []
-                for word in words:
-                    text_feature, _, _ = self.encode_text(word)  # [15, 1024]
-                    text_features.append(text_feature)
-                text_features = torch.cat(text_features, dim=0)  # [15, 1024]
-                padding = torch.zeros((38-text_features.shape[0]), 1024).cuda()
-                text_features = torch.cat([text_features, padding], dim=0).cuda()
-                lang.append(text_features)
-                # print('a', text_features.shape)
 
-                img = []
-                for j in range(12):
-                    # plt.imshow(emb[i][j])
-                    # plt.savefig(f'./{j}.jpg')
-                    # plt.close()
+        # with torch.no_grad():
+        #     for i in range(batch_size):
+        #         # l_enc_l, l_emb_l, l_mask_l = self.encode_text(lang_goals[i])  #lang_goals[j])
+        #         # lang_g = ["a yellow block", "a blue block", "a red block"]
+        #         # l_enc_l = clip.tokenize(lang_g).to(device)
+        #         # print('l_enc_l', l_enc_l)
+        #         words = [j for j in lang_goals[i].split()] 
 
-                    image = preprocess(Image.fromarray(emb[i][j])).unsqueeze(0).to(device)
-                    image_features = model.encode_image(image)  # [1, 1024]
-                    img.append(image_features)
+        #         img = []
+        #         for j in range(12):
+        #             # plt.imshow(emb[i][j])
+        #             # plt.savefig(f'./{j}.jpg')
+        #             # plt.close()
 
-                    # logits_per_image, logits_per_text = model(image, l_enc_l)
-                    # probs = logits_per_image.softmax(dim=-1).cpu().numpy()
-                    # print(probs)
-                    # print(fff)
-                    # print('b', image_features.shape)
-                img_emb = torch.cat(img, dim=0).float() # [12, 1024]
+        #             image = preprocess(Image.fromarray(emb[i][j])).unsqueeze(0).to(device)
+        #             image_features = model.encode_image(image)  # [1, 1024]
+        #             img.append(image_features)
 
-                imgs.append(img_emb)
+        #             # logits_per_image, logits_per_text = model(image, l_enc_l)
+        #             # probs = logits_per_image.softmax(dim=-1).cpu().numpy()
+        #             # print(probs)
+        #             # print(fff)
+        #             # print('b', image_features.shape)
+        #         img_emb = torch.cat(img, dim=0).float() # [12, 1024]
+
+        #         imgs.append(img_emb)
 
         #     langx = lang_goals[0]
 
@@ -502,19 +495,23 @@ class SSPTransformer(nn.Module):
         # labels = labels.reshape(batch_size, 12, 1).float()
 
         ############
+        texts = []
+        imgs = []
         loc_dict = ['left', 'right', 'top', 'bottom', 'middle']
-        labels_s = []
-        labels_sp = []
-        new_lang = []
-        new_pos = []
-        new_imgs = []
-        blocks = []
-        bowls = []
-        for i, j in enumerate(labels[0]):
-            if j == 1:
-                blocks.append(i)
-            if j == 2:
-                bowls.append(i)
+        #loc_dict = ['left', 'right', 'top', 'bottom', 'bottom']
+        labels_s = [[] for i in range(batch_size)]
+        labels_sp = [[] for i in range(batch_size)]
+        # new_lang = [[] for i in range(batch_size)]
+        new_pos = [[] for i in range(batch_size)]
+  
+        blocks = [[] for i in range(batch_size)]
+        bowls = [[] for i in range(batch_size)]
+        for i in range(batch_size):
+            for a, j in enumerate(labels[i]):
+                if j == 1:
+                    blocks[i].append(a)
+                if j == 2:
+                    bowls[i].append(a)
 
         def find_target(objs, positions, ins):
             loc = []
@@ -536,120 +533,176 @@ class SSPTransformer(nn.Module):
                 loc.sort(key=lambda x: x[1][1])
                 return loc[2][0]
 
-        img_emb = np.asarray(img_emb.cpu())
-        for a in range(5):
-            for b in range(5):
-                new_word = copy.deepcopy(words)
-                new_word[8] = loc_dict[a]
-                new_word[12] = loc_dict[b]
-                # new_lang.append(' '.join(new_word))
-                new_lang.append(new_word)
-                # print('new_lang', new_lang)
-                id_block = find_target(blocks, pos[0], loc_dict[a])
-                id_bowl = find_target(bowls, pos[0], loc_dict[b])
+        softmax_index = [[] for i in range(batch_size)] #[bz, 25, 2, 3]
+        softmax_label = [[] for i in range(batch_size)] #[bz, 25, 2, 3]
 
-                # posx = []
-                # for i in range(3):
-                #     posx.append(pos[0][blocks[i]])  # = pos[0][i for i in blocks]
-                new_pos.append([[xx[0]/320, xx[1]/160] for xx in pos[0]])
-                # new_label.append([0 for i in range(12)])
-                # new_label.append([0 for i in blocks])
-                labels_s.append([0 for i in range(12)])
-                labels_sp.append([0 for i in range(12)])
-                for i in blocks:
-                    labels_s[-1][i] = 1
-                for i in bowls:
-                    labels_s[-1][i] = 1
-                labels_sp[-1][id_block] = 1
-                labels_sp[-1][id_bowl] = 1
-                # imgx = []
-                # for i in range(3):
-                #     imgx.append(img_emb[blocks[i]])  # = pos[0][i for i in blocks]
-                #     # print('asdfas', img_emb[blocks[i]].shape)
-                # # print(ff)
-                new_imgs.append(img_emb)
-
-        imgs_emb = torch.tensor(new_imgs).cuda().reshape(25, 12, 1024).float()
-        text_langx = []
         with torch.no_grad():
-            for i in range(25):
-                langx = clip.tokenize(new_lang[i]).to(device)
-                langx = model.encode_text(langx).float().cuda()   #[15, 1024]
-                text_langx.append(langx)
-        # print('text_langx', text_langx.shape) #[25, 1024]
-        # print(fuck)
+            for i in range(batch_size):
+                words = [j for j in lang_goals[i].split()] 
+                img = []
+                for j in range(12):
+                    image = preprocess(Image.fromarray(emb[i][j])).unsqueeze(0).to(device)
+                    image_features = model.encode_image(image)  # [1, 1024]
+                    img.append(image_features)
+                img = torch.cat(img, dim=0).float() # [12, 1024]
+                imgs.append(torch.stack([img for x in range(25)], dim=0))
+                new_lang = []
+                for a in range(5):
+                    for b in range(5):
+                        new_word = copy.deepcopy(words)
+                        new_word[6] = 'center'
+                        new_word[8] = loc_dict[a]
+                        new_word[12] = loc_dict[b]
+                        # new_lang.append(' '.join(new_word))
+                        new_lang.append(new_word)
+                        # print('new_lang', new_lang)
+                        id_block = find_target(blocks[i], pos[i], loc_dict[a])
+                        id_bowl = find_target(bowls[i], pos[i], loc_dict[b])
+
+                        # print('new_lang', blocks[i], pos[i], id_block)
+                        # print(fff)
+                        # posx = []
+                        # for i in range(3):
+                        #     posx.append(pos[0][blocks[i]])  # = pos[0][i for i in blocks]
+                        new_pos[i].append([[xx[0]/320, xx[1]/160] for xx in pos[i]])
+                        # new_label.append([0 for i in range(12)])
+                        # new_label.append([0 for i in blocks])
+                        labels_s[i].append([0 for i in range(12)])
+                        labels_sp[i].append([0 for i in range(12)])
+                        for j in blocks[i]:
+                            labels_s[i][-1][j] = 1
+                        for j in bowls[i]:
+                            labels_s[i][-1][j] = 1
+                        labels_sp[i][-1][id_block] = 1
+                        labels_sp[i][-1][id_bowl] = 1
+
+                        # softmax_block = [item for item in blocks[i]]
+                        # softmax_bowl = [item for item in bowls[i]]
+                        # softmax_index[i].append([softmax_block, softmax_bowl])
+                        # softmax_label[i].append([[labels_sp[i][-1][x] for x in softmax_index[i][-1][0]], [labels_sp[i][-1][x] for x in softmax_index[i][-1][1]]])
+                
+                # print('new_lang', new_lang)
+                # print(fff)
+
+                text_langx = []
+                with torch.no_grad():
+                    for k in range(25):
+                        langx = clip.tokenize(new_lang[k]).to(device)
+                        langx = model.encode_text(langx).float().cuda()   #[15, 1024]
+                        text_langx.append(langx)
+                texts.append(torch.stack(text_langx, dim=0))
+
+        imgs = torch.stack(imgs, dim=0) # [bz, 25, 12, 1024]
+        # imgs_emb = torch.tensor(new_imgs).cuda().reshape(25, 12, 1024).float()
+        # imgs = torch.stack(imgs, dim=0) # [bz, 12, 1024]
         
         # text_xx = torch.stack([text_langx for i in range(3)], dim=1).cuda() #[25, 12, 1024]
         # text_emb = text_xx.reshape(25*3, 1024)
-        text_langx = torch.stack(text_langx, dim=0) #[25, 15, 1024]
-        text_langx = text_langx.reshape(25*15, 1024)
-        text_emb = self.text_encoder(text_langx) # [25*15, 248]
-        text_emb = text_emb.reshape(25, 15, 240).cuda()
-        padding = torch.zeros(25, 5, 240).cuda()
-        text_emb = torch.cat([text_emb, padding], dim=1)
+        texts = torch.stack(texts, dim=0) #[bz, 25, 15, 1024]
+        texts = texts.reshape(batch_size*25*15, 1024)
+        text_emb = self.text_encoder(texts) # [25*15, 248]
+        text_emb = text_emb.reshape(batch_size, 25, 15, 240).cuda()
+        padding = torch.zeros(batch_size, 25, 5, 240).cuda()
+        text_emb = torch.cat([text_emb, padding], dim=2)  #[bz, 25, 20, 240]
+        pad = torch.zeros(batch_size, 25, 20, 256).cuda()
+        text_emb = torch.cat([text_emb, pad], dim=3)  #[bz, 25, 20, 496]
 
-        # imgs [bz, 12, 1, 512]
-
-        # text_emb = torch.stack(lang, dim=0).float() # [25, 1, 1024]
-        # text_emb = text_emb.reshape(batch_size*38, 1024) # [batch_size*38, 1024]
-        # text_emb = self.text_encoder(text_emb).reshape(batch_size, 38, 256) # [batch_size, 1, 256]
-        # imgs_emb = torch.stack(new_imgs, dim=0).cuda().float() # [25, 12, 1024]
-        imgs_emb = imgs_emb.reshape(25*12, 1024) # [batch_size*12, 256]
-
+        imgs_emb = imgs.reshape(batch_size*25*12, 1024) # [batch_size*12, 256]
         imgs_emb = self.imgs_encoder(imgs_emb) # [25*12, 240]
-        pos = torch.tensor(new_pos).cuda().reshape(25*12, 2).float()
-        pos = self.pos_emb(pos) # [25*12, 128]
-        pos = pos.reshape(25*12, 256)
+        pos = torch.tensor(new_pos).cuda().reshape(batch_size*25*12, 2).float()
+        pos = self.pos_emb(pos) # [bz*25*12, 256]
+        pos = pos.reshape(batch_size*25*12, 256)
         # imgs_emb = torch.cat([imgs_emb, pos], dim=1)
         # imgs_emb = imgs_emb.reshape(25, 12, 240)
         # imgs_emb = self.mult_fusion(imgs_emb, pos)
-        imgs_emb = imgs_emb.reshape(25, 12, 240)
-        input = torch.cat([text_emb, imgs_emb], dim=1) # [25, 32, 240]
+        imgs_emb = torch.cat([imgs_emb, pos], dim=1)
+        imgs_emb = imgs_emb.reshape(batch_size, 25, 12, 496)
+        input = torch.cat([text_emb, imgs_emb], dim=2) # [batch_size, 25, 32, 496]
 
-        position_index = [[] for i in range(25)]
-        for i in range(25):
-            for j in range(20):
-                position_index[i].append(j)
-            for k in range(12):
-                position_index[i].append(20+k)
-            # for k in range(12):
-            #     position_index[i].append(20+k)
+        position_index = [[[] for i in range(25)] for j in range(batch_size)]
+        for x in range(batch_size):
+            for i in range(25):
+                for j in range(20):
+                    position_index[x][i].append(j)
+                for k in range(12):
+                    position_index[x][i].append(20+k)
+                # for k in range(12):
+                #     position_index[i].append(20+k)
         position_index = torch.LongTensor(position_index).cuda()
-        position_embed = self.position_embeddings(position_index) # [25, 32, 8]
+        position_embed = self.position_embeddings(position_index) # [batch_size, 25, 32, 8]
 
-        type_index = [[] for i in range(25)]
-        for i in range(25):
-            for j in range(20):
-                type_index[i].append(0)
-            for k in range(12):
-                type_index[i].append(1)
-            # for k in range(12):
-            #     type_index[i].append(2)
+        type_index = [[[] for i in range(25)] for j in range(batch_size)]
+        for x in range(batch_size):
+            for i in range(25):
+                for j in range(20):
+                    type_index[x][i].append(0)
+                for k in range(12):
+                    type_index[x][i].append(1)
+                # for k in range(12):
+                #     type_index[i].append(2)
         type_index = torch.LongTensor(type_index).cuda()
-        type_embed = self.token_type_embeddings(type_index) # [25, 32, 8]
+        type_embed = self.token_type_embeddings(type_index) # [batch_size, 25, 32, 8]
 
-        input = torch.cat([input, position_embed, type_embed], dim=-1) # [25, 32, 256]
-        latent_input = input.transpose(1, 0)  # [32, 25, 256]
-        encode = self.encoder(latent_input) # [32, 25, 256]
+        input = torch.cat([input, position_embed, type_embed], dim=-1) # [batch_size, 25, 32, 256]
+        input = input.reshape(batch_size*25, 32, 512)
+        latent_input = input.transpose(1, 0)  # [32, batch_size*25, 256]
+        encode = self.encoder(latent_input) # [32, batch_size*25, 256]
         # encode = latent_input
-        out = encode[20:32].transpose(1,0) # [25, 12, 256]
+        out = encode[20:32].transpose(1,0) # [batch_size*25, 12, 256]
         # out = out.reshape(25, 12, 2, 128)
         semantic_out = out # [:,:,0,:] # [25, 12, 128]
-        semantic_out = semantic_out.reshape(25*12, 256)
-        semantic_out = self.mult_fusion(semantic_out, pos)
-        sp_out = out # [:,:,1,:] # [25, 12, 128] encode[32:44].transpose(1,0) # [25, 12, 256]
-        sp_out = sp_out.reshape(25*12, 256)
-        sp_out = self.mult_fusion(sp_out, pos)
+        semantic_out = semantic_out.reshape(batch_size*25*12, 512)
+        # semantic_out = self.mult_fusion(semantic_out, pos)
+
+        # softmax_index = np.array(softmax_index).reshape(batch_size*25, 2, 3)        #[bz, 25, 2, 3]
+        # softmax_label = np.array(softmax_label).reshape(batch_size*25, 2, 3)      
+
+        sp_out = out # [batch_size*25, 12, 256]
+
+        sp_out = sp_out.reshape(batch_size*25*12, 512)
+        # sp_out = self.sp_a(sp_out)
+        # sp_out = self.mult_fusion(sp_out, pos)
+        # sp_out = self.sp_b(sp_out)
+        # sp_out = sp_out.reshape(batch_size*25, 12, 1)
+
+        # qian_out = sp_out
+        # qian_out = self.sp_a(qian_out)
+        # qian_out = qian_out.reshape(batch_size*25, 12, 1)
+        # sp_softmax = []   #[[[] for j in range(2)] for i in range(batch_size*25)]
+        # for i in range(batch_size*25):
+        #     aa = []
+        #     for j in range(2):
+        #         a = []
+        #         for k in range(3):
+        #             a.append(qian_out[i][softmax_index[i][j][k]])
+        #             # print('fas', sp_out[i][softmax_index[i][j][k]].shape)
+        #             # print(fasd)
+        #         a = torch.stack(a, dim=0)
+        #         aa.append(a)
+        #     aa = torch.stack(aa, dim=0)
+        #     sp_softmax.append(aa)
+        # sp_softmax = torch.stack(sp_softmax, dim=0)
+        # sp_softmax = sp_softmax.reshape(batch_size*25*2, 3)
+        # sp_softmax_f = F.softmax(sp_softmax, dim=-1)
+        # sp_softmax_f = sp_softmax_f.reshape(batch_size*25*2, 3, 1).float()
+        # labels_sof = torch.tensor(softmax_label).cuda()
+        # labels_sof = labels_sof.reshape(batch_size*25*2, 3).float()
+        # labels_sof = F.softmax(labels_sof, dim=-1)
+        # labels_sof = labels_sof.reshape(batch_size*25*2, 3, 1).float()
+
+        # print('sp_out', sp_softmax_f[0])
+        # print('labels_sp', labels_sof[0])
         # imgs_emb = self.mult_fusion(text_emb, imgs_emb)
         # imgs_emb = self.mult_fusion(pos, imgs_emb)
 
-        semantic_out = self.s_decoder(semantic_out).reshape(25, 12)
+        semantic_out = self.s_decoder(semantic_out).reshape(batch_size*25, 12)
         semantic_out_f = F.softmax(semantic_out, dim=-1)
-        semantic_out_f = semantic_out_f.reshape(25, 12, 1).float()
-        sp_out_f = self.sp_decoder(sp_out).reshape(25, 12)
-        sp_out_f = self.mult_fusion(semantic_out, sp_out_f)
+        semantic_out_f = semantic_out_f.reshape(batch_size, 25, 12, 1).float()
+        sp_out_f = self.sp_decoder(sp_out).reshape(batch_size*25, 12)
+        # sp_out_f = self.mult_fusion(semantic_out, sp_out_f)
+        #sp_out_f = sp_out.reshape(batch_size*25, 12)
         sp_out_f = F.softmax(sp_out_f, dim=-1)
-        sp_out_f = sp_out_f.reshape(25, 12, 1).float()
+        sp_out_f = sp_out_f.reshape(batch_size, 25, 12, 1).float()
 
         labels_s = np.array(labels_s)
         labels_sp = np.array(labels_sp)
@@ -658,22 +711,35 @@ class SSPTransformer(nn.Module):
         # labels = labels + labels_sp
         # print(labels)
 
-        labels_s = labels_sp #labels_s + labels_sp
+        # labels_s = labels_sp #labels_s + labels_sp
         labels_s = torch.tensor(labels_s).cuda()
-        labels_s = labels_s.reshape(25, 12).float()
+        labels_s = labels_s.reshape(batch_size*25, 12).float()
         labels_s = F.softmax(labels_s, dim=-1)
-        labels_s = labels_s.reshape(25, 12, 1).float()
-        print('semantic_out', semantic_out_f[0])
-        print('labels_s', labels_s[0])
+        labels_s = labels_s.reshape(batch_size, 25, 12, 1).float()
+        print('semantic_out', semantic_out_f[0][0])
+        print('labels_s', labels_s[0][0])
 
         labels_sp = torch.tensor(labels_sp).cuda()
-        labels_sp = labels_sp.reshape(25, 12).float()
+        labels_sp = labels_sp.reshape(batch_size*25, 12).float()
         labels_sp = F.softmax(labels_sp, dim=-1)
-        labels_sp = labels_sp.reshape(25, 12, 1).float()
-        print('sp_out', sp_out_f[0])
-        print('labels_sp', labels_sp[0])
+        labels_sp = labels_sp.reshape(batch_size, 25, 12, 1).float()
+        print('sp_out', sp_out_f[0][20])
+        print('labels_sp', labels_sp[0][20])
 
-        return semantic_out_f, labels_s, sp_out_f, labels_sp
+        # for j in range(12):
+        #     plt.subplot(3, 4, (j+1))
+        #     plt.imshow(emb[0][j])
+        #     print(new_pos[0][0][j])
+
+        # plt.show()
+        # plt.savefig('./visualization1.jpg')
+        # plt.close()            
+        # print(fa)
+        # print('sp_out', sp_softmax_f[0])
+        # print('labels_sp', labels_sof[0])
+
+        return semantic_out_f, labels_s, sp_out_f, labels_sp # sp_softmax_f, labels_sof #, sp_out_f, labels_sp
+        #return semantic_out_f, labels_s, sp_softmax_f, labels_sof #, sp_out_f, labels_sp
 
         ############
 

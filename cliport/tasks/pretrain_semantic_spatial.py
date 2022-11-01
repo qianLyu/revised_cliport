@@ -20,7 +20,7 @@ class PretrainSemanticSpatialUnseenColors(Task):
         self.pos_eps = 0.05
         self.lang_template = "pick the {color_pick} block in the middle of {loc_place_1}{color_place_1} {obj_place_1} and {loc_place_2}{color_place_2} {obj_place_2}"
         self.loc_dict = ['left ', 'right ', 'top ', 'bottom ', 'middle ']
-        self.batch_size = 2
+        self.batch_size = 10
         self.lang_goals = []
         self.labels = []
         self.found_objs = {}
