@@ -827,8 +827,8 @@ def vild(image_path, category_name_string, params, plot_on=True, prompt_swaps=[]
     # plt.savefig(f'./{anno_idx}.jpg')
     found_objects.append(category_names[np.argmax(scores)])
     hmaps.append(segmentations[anno_idx])
-  if not plot_on:
-    return found_objects, hmaps
+  # if not plot_on:
+  #   return found_objects, hmaps
   
 
   #################################################################
@@ -863,47 +863,47 @@ def vild(image_path, category_name_string, params, plot_on=True, prompt_swaps=[]
 
     # plt.figure(figsize=overall_fig_size)
 
-    # plt.imshow(image_with_detections)
-    # # plt.axis("off")
-    # plt.title("ViLD detected objects and RPN scores.")
-    # plt.show()
-    # plt.savefig('./afdsf.jpg')
+    plt.imshow(image_with_detections)
+    # plt.axis("off")
+    plt.title("ViLD detected objects and RPN scores.")
+    plt.show()
+    plt.savefig('./11.jpg')
 
   return found_objects
 
-category_names = ['blue block',
-                  'red block',
-                  'green block',
-                  'orange block',
-                  'yellow block',
-                  'purple block',
-                  'pink block',
-                  'cyan block',
-                  'brown block',
-                  'gray block',
+# category_names = ['blue block',
+#                   'red block',
+#                   'green block',
+#                   'orange block',
+#                   'yellow block',
+#                   'purple block',
+#                   'pink block',
+#                   'cyan block',
+#                   'brown block',
+#                   'gray block',
 
-                  'blue bowl',
-                  'red bowl',
-                  'green bowl',
-                  'orange bowl',
-                  'yellow bowl',
-                  'purple bowl',
-                  'pink bowl',
-                  'cyan bowl',
-                  'brown bowl',
-                  'gray bowl']
-image_path = 'xx.jpg'
+#                   'blue bowl',
+#                   'red bowl',
+#                   'green bowl',
+#                   'orange bowl',
+#                   'yellow bowl',
+#                   'purple bowl',
+#                   'pink bowl',
+#                   'cyan bowl',
+#                   'brown bowl',
+#                   'gray bowl']
+# image_path = 'xx.jpg'
 
-#@markdown ViLD settings.
-category_name_string = ";".join(category_names)
-max_boxes_to_draw = 8 #@param {type:"integer"}
+# #@markdown ViLD settings.
+# category_name_string = ";".join(category_names)
+# max_boxes_to_draw = 12 #@param {type:"integer"}
 
-# Extra prompt engineering: swap A with B for every (A, B) in list.
-prompt_swaps = [('block', 'cube')]
+# # Extra prompt engineering: swap A with B for every (A, B) in list.
+# prompt_swaps = [('block', 'cube')]
 
-nms_threshold = 0.4 #@param {type:"slider", min:0, max:0.9, step:0.05}
-min_rpn_score_thresh = 0.4  #@param {type:"slider", min:0, max:1, step:0.01}
-min_box_area = 10 #@param {type:"slider", min:0, max:10000, step:1.0}
-max_box_area = 3000  #@param {type:"slider", min:0, max:10000, step:1.0}
-vild_params = max_boxes_to_draw, nms_threshold, min_rpn_score_thresh, min_box_area, max_box_area
+# nms_threshold = 0.4 #@param {type:"slider", min:0, max:0.9, step:0.05}
+# min_rpn_score_thresh = 0.4  #@param {type:"slider", min:0, max:1, step:0.01}
+# min_box_area = 10 #@param {type:"slider", min:0, max:10000, step:1.0}
+# max_box_area = 3000  #@param {type:"slider", min:0, max:10000, step:1.0}
+# vild_params = max_boxes_to_draw, nms_threshold, min_rpn_score_thresh, min_box_area, max_box_area
 # found_objects = vild(image_path, category_name_string, vild_params, plot_on=True, prompt_swaps=prompt_swaps)

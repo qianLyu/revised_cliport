@@ -47,9 +47,8 @@ class Task():
         self.progress = 0
         self._rewards = 0
         self.pick_attr_label = {}
-        self.selected_color_block_id = {}
         self.all_id_image = {}
-        self.selected_color_image = {}
+        self.selected_id_image = {}
         self.max_steps = 12
 
 
@@ -76,7 +75,7 @@ class Task():
             """Calculate action."""
 
             # Oracle uses perfect RGB-D orthographic images and segmentation masks.
-            _, hmap, obj_mask = self.get_true_image(env)
+            rgb_mask, hmap, obj_mask = self.get_true_image(env)
 
             # plt.imshow(_)
             # plt.savefig('./color.jpg')
@@ -84,9 +83,9 @@ class Task():
             # plt.imshow(hmap)
             # plt.savefig('./depth.jpg')
             # plt.close()
-            plt.imshow(obj_mask)
-            plt.savefig('./obj_mask.jpg')
-            plt.close()
+            # plt.imshow(obj_mask)
+            # plt.savefig('./obj_mask.jpg')
+            # plt.close()
             # Unpack next goal step.
             # print(self.goals)
 
@@ -155,9 +154,8 @@ class Task():
                 self.goals = []
                 self.lang_goals = []
                 self.all_id_image = {}
-                self.selected_color_image = {}
+                self.selected_id_image = {}
                 self.pick_attr_label = {}
-                self.selected_color_block_id = {}
                 print('Object for pick is not visible. Skipping demonstration.')
                 return None, None, None
 
@@ -165,9 +163,9 @@ class Task():
                 temp_mask = copy.deepcopy(pick_mask)
                 temp_mask = np.uint8(obj_mask == colorid)
                 temp_mask = np.float32(temp_mask)
-                self.all_id_image[colorid] = temp_mask
-                if colorname in self.selected_color_block_id:
-                    self.selected_color_image[colorname] = temp_mask
+                self.all_id_image[colorid] = np.uint8(rgb_mask * np.asarray([temp_mask, temp_mask, temp_mask]).transpose(1,2,0))
+                if colorid in self.selected_id_image:
+                    self.selected_id_image[colorid] = np.uint8(rgb_mask * np.asarray([temp_mask, temp_mask, temp_mask]).transpose(1,2,0))
                 # plt.imshow(temp_mask)
                 # plt.savefig(f'./{colorid}.jpg')
                 # plt.close()
@@ -202,21 +200,20 @@ class Task():
 
             place_pose = (np.asarray(place_pose[0]), np.asarray(place_pose[1]))
 
-            # for colorname, image in self.selected_color_image.items():
+            # for colorname, image in self.selected_id_image.items():
             #     plt.imshow(image)
             #     plt.savefig(f'./{colorname}.jpg')
             #     plt.close()
 
             all_id_image = copy.deepcopy(self.all_id_image)
-            selected_color_image = copy.deepcopy(self.selected_color_image)
+            selected_id_image = copy.deepcopy(self.selected_id_image)
 
             if cur_step == self.max_steps:
                 self.all_id_image = {}
-                self.selected_color_image = {}
+                self.selected_id_image = {}
                 self.pick_attr_label = {}
-                self.selected_color_block_id = {}
 
-            return {'pose0': pick_pose, 'pose1': place_pose}, all_id_image, selected_color_image
+            return {'pose0': pick_pose, 'pose1': place_pose}, all_id_image, selected_id_image
 
         return OracleAgent(act)
 
@@ -283,9 +280,8 @@ class Task():
         if np.abs(max_reward - step_reward) < 0.01:
             self.progress += max_reward  # Update task progress.
             self.all_id_image = {}
-            self.selected_color_image = {}
+            self.selected_id_image = {}
             self.pick_attr_label = {}
-            self.selected_color_block_id = {}
             self.goals.pop(0)
             if len(self.lang_goals) > 0:
                 self.lang_goals.pop(0)

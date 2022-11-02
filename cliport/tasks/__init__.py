@@ -52,6 +52,9 @@ from cliport.tasks.pretrain_semantic_spatial import PretrainSemanticSpatialFull
 from cliport.tasks.pretrain_semantic_spatial_left import PretrainSemanticSpatialLeftUnseenColors
 from cliport.tasks.pretrain_semantic_spatial_left import PretrainSemanticSpatialLeftSeenColors
 from cliport.tasks.pretrain_semantic_spatial_left import PretrainSemanticSpatialLeftFull
+from cliport.tasks.ssp_hard import SSPHardUnseenColors
+from cliport.tasks.ssp_hard import SSPHardSeenColors
+from cliport.tasks.ssp_hard import SSPHardFull
 
 names = {
     # demo conditioned
@@ -108,4 +111,7 @@ names = {
     'pretrain-semantic-spatial-left-seen-colors': PretrainSemanticSpatialLeftSeenColors,
     'pretrain-semantic-spatial-left-unseen-colors': PretrainSemanticSpatialLeftUnseenColors,
     'pretrain-semantic-spatial-left-full': PretrainSemanticSpatialLeftFull,
+    'ssp-hard-seen-colors': SSPHardSeenColors,
+    'ssp-hard-unseen-colors': SSPHardUnseenColors,
+    'ssp-hard-full': SSPHardFull,
 }

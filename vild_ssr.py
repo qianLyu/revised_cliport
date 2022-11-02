@@ -66,18 +66,19 @@ def main(cfg):
     name = '{}-{}-{}'.format(task, agent_type, n_demos)
 
     # # Datasets
-    dataset_type = cfg['dataset']['type']
-    if 'multi' in dataset_type:
-        train_ds = RavensMultiTaskDataset(data_dir, cfg, group=task, mode='train', n_demos=n_demos, augment=True)
-        val_ds = RavensMultiTaskDataset(data_dir, cfg, group=task, mode='val', n_demos=n_val, augment=False)
-    else:
-        train_ds = RavensDataset(os.path.join(data_dir, '{}-train'.format(task)), cfg, n_demos=n_demos, augment=True)
-        val_ds = RavensDataset(os.path.join(data_dir, '{}-val'.format(task)), cfg, n_demos=n_val, augment=False)
+    # dataset_type = cfg['dataset']['type']
+    # if 'multi' in dataset_type:
+    #     train_ds = RavensMultiTaskDataset(data_dir, cfg, group=task, mode='train', n_demos=n_demos, augment=True)
+    #     val_ds = RavensMultiTaskDataset(data_dir, cfg, group=task, mode='val', n_demos=n_val, augment=False)
+    # else:
+    #     train_ds = RavensDataset(os.path.join(data_dir, '{}-train'.format(task)), cfg, n_demos=n_demos, augment=True)
+    #     val_ds = RavensDataset(os.path.join(data_dir, '{}-val'.format(task)), cfg, n_demos=n_val, augment=False)
+
 
     # Semantic-Spatial Pre-trainer Datasets
 
-    # train_ds = SSPretrainDataset(os.path.join(data_dir, '{}-train'.format(task)), cfg, n_demos=n_demos, augment=True)
-    # val_ds = SSPretrainDataset(os.path.join(data_dir, '{}-val'.format(task)), cfg, n_demos=n_val, augment=False)
+    train_ds = SSPretrainDataset(os.path.join(data_dir, '{}-train'.format(task)), cfg, n_demos=n_demos, augment=True)
+    val_ds = SSPretrainDataset(os.path.join(data_dir, '{}-val'.format(task)), cfg, n_demos=n_val, augment=False)
 
     # Initialize agent
     agent = agents.names[agent_type](name, cfg, train_ds, val_ds)

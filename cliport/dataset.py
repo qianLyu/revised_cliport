@@ -20,6 +20,7 @@ from cliport import agents
 
 from cliport.models.simple_lang_fusion import SimpleLingFusion
 import copy
+from vild_detection import vild
 
 class RavensDataset(Dataset):
     """A simple image dataset class."""
@@ -175,7 +176,49 @@ class RavensDataset(Dataset):
                     episode.append((obs, action[i], all_mask[i], selected_mask[i], reward[i], info[i]))
                 return episode, seed
 
-    def get_image(self, obs, all_mask, selected_mask, lang_goal, cam_config=None):
+    def get_vild(self, ):
+        # category_names = ['blue block',
+        #                 'red block',
+        #                 'green block',
+        #                 'orange block',
+        #                 'yellow block',
+        #                 'purple block',
+        #                 'pink block',
+        #                 'cyan block',
+        #                 'brown block',
+        #                 'gray block',
+
+        #                 'blue bowl',
+        #                 'red bowl',
+        #                 'green bowl',
+        #                 'orange bowl',
+        #                 'yellow bowl',
+        #                 'purple bowl',
+        #                 'pink bowl',
+        #                 'cyan bowl',
+        #                 'brown bowl',
+        #                 'gray bowl']
+
+        category_names = ['object']
+
+        image_path = 'xx.jpg'
+
+        #@markdown ViLD settings.
+        category_name_string = ";".join(category_names)
+        max_boxes_to_draw = 12 #@param {type:"integer"}
+
+        # Extra prompt engineering: swap A with B for every (A, B) in list.
+        prompt_swaps = [('block', 'cube')]
+
+        nms_threshold = 0.4 #@param {type:"slider", min:0, max:0.9, step:0.05}
+        min_rpn_score_thresh = 0.4  #@param {type:"slider", min:0, max:1, step:0.01}
+        min_box_area = 10 #@param {type:"slider", min:0, max:10000, step:1.0}
+        max_box_area = 3000  #@param {type:"slider", min:0, max:10000, step:1.0}
+        vild_params = max_boxes_to_draw, nms_threshold, min_rpn_score_thresh, min_box_area, max_box_area
+        found_objects = vild(image_path, category_name_string, vild_params, plot_on=True, prompt_swaps=prompt_swaps)
+
+
+    def get_image(self, obs, all_id_image, selected_id_image, lang_goal, cam_config=None):
         """Stack color and height images image."""
 
         # if self.use_goal_image:
@@ -191,6 +234,15 @@ class RavensDataset(Dataset):
         cmap, hmap = utils.get_fused_heightmap(
             obs, cam_config, self.bounds, self.pix_size)
 
+        img = Image.fromarray(cmap)
+        img.show()
+        img.save('img.jpg') 
+
+        image_path = 'img.jpg'
+
+        self.get_vild(image_path)
+        print(k)
+        # return found_objects, hmaps
         # found_objects, hmaps = vild(image_path, category_name_string, vild_params, plot_on=True, prompt_swaps=prompt_swaps)
 
         # if len(found_objects) < 6:
@@ -327,9 +379,9 @@ class RavensDataset(Dataset):
 
     def process_sample(self, datum, augment=True):
         # Get training labels from data sample.
-        (obs, act, found_objects, hmaps, _, info) = datum
+        (obs, act, all_id_image, selected_id_image, _, info) = datum
 
-        img, template = self.get_image(obs, found_objects, hmaps, info['lang_goal'])
+        img, template = self.get_image(obs, all_id_image, selected_id_image, info['lang_goal'])
         # img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None
@@ -371,8 +423,8 @@ class RavensDataset(Dataset):
 
     def process_goal(self, goal, perturb_params):
         # Get goal sample.
-        (obs, act, found_objects, hmaps, _, info) = goal
-        img, template = self.get_image(obs, found_objects, hmaps, info['lang_goal'])
+        (obs, act, all_id_image, selected_id_image, _, info) = goal
+        img, template = self.get_image(obs, all_id_image, selected_id_image, info['lang_goal'])
         # img = self.get_image(obs, all_mask)
 
         p0, p1 = None, None

@@ -71,10 +71,10 @@ def main(cfg):
 
         # Rollout expert policy
         for _ in range(task.max_steps):
-            act, all_mask, selected_mask = agent.act(obs, info, _+1)
+            act, all_id_image, selected_id_image = agent.act(obs, info, _+1)
 
             # found_objects, hmaps = dataset.get_objects_vild(obs) #, selected_mask)
-            print('objects', len(found_objects), found_objects)
+            # print('objects', len(found_objects), found_objects)
 
             # if len(found_objects) < 6:
             #     print('not enough objects')
@@ -86,7 +86,7 @@ def main(cfg):
             #     template += f' a {found_objects[x]}'
             # template += '. '
     
-            episode.append((obs, act, found_objects, hmaps, reward, info))
+            episode.append((obs, act, all_id_image, selected_id_image, reward, info))
             lang_goal = info['lang_goal']
             obs, reward, done, info = env.step(act)
             total_reward += reward
@@ -94,9 +94,9 @@ def main(cfg):
             if done:
                 break
 
-        found_objects1, hmaps = dataset.get_objects_vild(obs) #, selected_mask)
+        # found_objects1, hmaps = dataset.get_objects_vild(obs) #, selected_mask)
         # print('objects_goal', len(found_objects), found_objects)
-        episode.append((obs, None, found_objects1, hmaps, reward, info))
+        episode.append((obs, None, all_id_image, selected_id_image, reward, info))
 
         # End video recording
         if record:

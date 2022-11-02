@@ -15,8 +15,8 @@ class PickPlaceMiddleUnseenColors(Task):
         self.max_steps = 12
         self.lang_template = "put the smallest block in the middle of {place1} block and {place2} block"
         self.task_completed_desc = "done picking and place."
-        self.all_color_block_id = {}
-        self.selected_color_block_id = {}
+        # self.all_id = {}
+        self.selected_id_image = {}
 
     def reset(self, env):
         super().reset(env)
@@ -34,6 +34,8 @@ class PickPlaceMiddleUnseenColors(Task):
         random.shuffle(color_names)
         colors = [utils.COLORS[cn] for cn in color_names]
 
+        all_color_block_id = {}
+
         # Add blocks.
         objs = []
         # sym = np.pi / 2
@@ -46,7 +48,8 @@ class PickPlaceMiddleUnseenColors(Task):
             block_id = env.add_object(block_urdf[i], block_pose)
             p.changeVisualShape(block_id, -1, rgbaColor=colors[i] + [1])
             objs.append((block_id, (np.pi / 2, None)))
-            self.all_color_block_id[color_names[i]] = block_id
+            all_color_block_id[color_names[i]] = block_id
+            # self.all_id[block_id] = []
 
 
         # Associate placement locations for goals.
@@ -70,8 +73,8 @@ class PickPlaceMiddleUnseenColors(Task):
         self.lang_goals.append(self.lang_template.format(place1=color_names[selected_index[0]],
                                                          place2=color_names[selected_index[1]]))
 
-        self.selected_color_block_id[color_names[selected_index[0]]] = self.all_color_block_id[color_names[selected_index[0]]]
-        self.selected_color_block_id[color_names[selected_index[1]]] = self.all_color_block_id[color_names[selected_index[1]]]
+        self.selected_id_image[all_color_block_id[color_names[selected_index[0]]]] = []
+        self.selected_id_image[all_color_block_id[color_names[selected_index[1]]]] = []
 
         # self.goals.append(([objs[1]], np.ones((1, 1)), [targs[1]],
         #                    False, True, 'pose', None, 1 / 6))
